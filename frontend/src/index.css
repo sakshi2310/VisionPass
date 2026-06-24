@@ -1,0 +1,134 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --app-bg: #020617;
+  --app-surface: rgba(15, 23, 42, 0.78);
+  --app-surface-strong: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.96));
+  --app-border: rgba(148, 163, 184, 0.14);
+  --app-text: #e2e8f0;
+  --app-muted: #94a3b8;
+  --visionpass-logo-start: #2f7cff;
+  --visionpass-logo-mid: #5c54ff;
+  --visionpass-logo-end: #a23bff;
+  --visionpass-logo-pupil: #161f73;
+}
+
+:root.dark {
+  color-scheme: dark;
+  --visionpass-logo-start: #2f7cff;
+  --visionpass-logo-mid: #5c54ff;
+  --visionpass-logo-end: #a23bff;
+  --visionpass-logo-pupil: #161f73;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --app-bg: #f4f7fb;
+  --app-surface: rgba(255, 255, 255, 0.8);
+  --app-surface-strong: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.92));
+  --app-border: rgba(15, 23, 42, 0.1);
+  --app-text: #0f172a;
+  --app-muted: #475569;
+  --visionpass-logo-start: #2f7cff;
+  --visionpass-logo-mid: #5c54ff;
+  --visionpass-logo-end: #a23bff;
+  --visionpass-logo-pupil: #161f73;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --app-bg: #020617;
+  --app-surface: rgba(15, 23, 42, 0.78);
+  --app-surface-strong: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(2, 6, 23, 0.96));
+  --app-border: rgba(148, 163, 184, 0.14);
+  --app-text: #e2e8f0;
+  --app-muted: #94a3b8;
+  --visionpass-logo-start: #2f7cff;
+  --visionpass-logo-mid: #5c54ff;
+  --visionpass-logo-end: #a23bff;
+  --visionpass-logo-pupil: #161f73;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  background:
+    radial-gradient(circle at top left, rgba(59, 130, 246, 0.14), transparent 28%),
+    radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.12), transparent 24%),
+    var(--app-bg);
+  color: var(--app-text);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgba(59, 130, 246, 0.35);
+  color: white;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 999px;
+}
+
+@layer components {
+  .surface {
+    @apply rounded-3xl border border-slate-200 bg-white/75 shadow-soft backdrop-blur dark:border-white/10 dark:bg-slate-950/75;
+    border-color: var(--app-border);
+  }
+
+  .surface-strong {
+    @apply rounded-3xl border shadow-soft backdrop-blur;
+    background: var(--app-surface-strong);
+    border-color: var(--app-border);
+  }
+
+  .muted-label {
+    color: var(--app-muted);
+  }
+}
+
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-modal-in {
+  animation: modal-in 180ms ease-out;
+}
+

@@ -1,0 +1,26 @@
+# OS
+Thumbs.db
+Desktop.ini
+
+# Node
+node_modules/
+.next/
+dist/
+out/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Tooling
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+

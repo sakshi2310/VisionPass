@@ -1,0 +1,2 @@
+"""Attendance log model."""
+
