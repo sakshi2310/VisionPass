@@ -1,0 +1,2 @@
+"""Visitor log model."""
+
