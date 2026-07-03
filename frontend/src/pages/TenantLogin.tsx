@@ -38,9 +38,9 @@ export function TenantLogin() {
     return "";
   }, [organizationSlug, searchParams]);
 
-  const workspaceName = organizationName || "VisionPass AI Tenant";
+  const workspaceName = organizationName || "Vision Pass Tenant";
 
-  usePageTitle(organizationName ? `VisionPass AI | ${organizationName}` : "VisionPass AI | Tenant Login");
+  usePageTitle(organizationName ? `Vision Pass | ${organizationName}` : "Vision Pass | Tenant Login");
 
   function validate() {
     if (!form.email.trim()) return "Email is required.";

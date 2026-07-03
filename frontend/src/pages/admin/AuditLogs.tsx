@@ -23,7 +23,7 @@ export function AuditLogs() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
-  usePageTitle('VisionPass AI | Audit Logs');
+  usePageTitle('Vision Pass | Audit Logs');
 
   async function loadLogs() {
     try {

@@ -37,7 +37,7 @@ def build_display_role(role: str) -> str:
         "tenant_admin": "Tenant Admin",
         "user": "Tenant User",
     }
-    return mapping.get(normalized, "VisionPass AI")
+    return mapping.get(normalized, "Vision Pass")
 
 
 def has_super_admin(db: Session) -> bool:

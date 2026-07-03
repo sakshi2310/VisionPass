@@ -53,7 +53,7 @@ export function Features() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pageSize = 10;
 
-  usePageTitle('VisionPass AI | Features');
+  usePageTitle('Vision Pass | Features');
 
   const selectedFeature = useMemo(() => features.find((feature) => feature.id === selectedFeatureId) ?? null, [features, selectedFeatureId]);
 

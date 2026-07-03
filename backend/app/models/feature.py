@@ -17,7 +17,7 @@ class Feature(Base):
 
     id: Mapped[str] = mapped_column(PGUUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
     feature_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    feature_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    feature_code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(account_status_enum, nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

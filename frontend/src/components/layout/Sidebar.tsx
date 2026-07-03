@@ -1,7 +1,9 @@
 import {
   Building2,
+  Bell,
   CalendarCheck2,
   ChartColumnIncreasing,
+  ChevronDown,
   ClipboardList,
   DoorOpen,
   LayoutDashboard,
@@ -12,8 +14,9 @@ import {
   Sparkles,
   SlidersHorizontal,
   Users,
+  UserRound,
 } from 'lucide-react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import { BrandWordmark } from '@/components/brand/BrandWordmark';
 import { Badge } from '@/components/ui/Badge';
@@ -36,6 +39,9 @@ const iconMap = {
   ShieldCheck,
   Building2,
   SlidersHorizontal,
+  ChevronDown,
+  Bell,
+  UserRound,
 } as const;
 
 type SidebarProps = {
@@ -43,14 +49,22 @@ type SidebarProps = {
   onClose: () => void;
 };
 
+function isNavActive(pathname: string, path: string, children?: { path: string }[]) {
+  if (children?.length) {
+    return children.some((child) => pathname === child.path || pathname.startsWith(`${child.path}/`));
+  }
+  return pathname === path || pathname.startsWith(`${path}/`);
+}
+
 export function Sidebar({ open, onClose }: SidebarProps) {
+  const location = useLocation();
   const navigate = useNavigate();
   const { user, currentTenant, hasModule, logout } = useApp();
 
   const navItems =
     user?.role === 'SUPER_ADMIN'
       ? adminNavItems
-      : user?.role === 'TENANT_ADMIN'
+      : user?.role === 'TENANT_ADMIN' || user?.role === 'CLIENT_ADMIN'
         ? tenantAdminNavItems
         : user?.role === 'TENANT_USER'
           ? tenantMemberNavItems
@@ -63,8 +77,8 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const roleLabel =
     user?.role === 'SUPER_ADMIN'
       ? 'Super Admin'
-      : user?.role === 'TENANT_ADMIN'
-        ? 'Tenant Admin'
+      : user?.role === 'TENANT_ADMIN' || user?.role === 'CLIENT_ADMIN'
+        ? 'Client Admin'
         : 'Tenant User';
 
   return (
@@ -98,6 +112,54 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         <nav className="grid gap-1">
           {navItems.map((item) => {
             const Icon = iconMap[item.icon as keyof typeof iconMap] ?? LayoutDashboard;
+            const active = isNavActive(location.pathname, item.path, item.children);
+
+            if (item.children?.length) {
+              return (
+                <div key={item.key} className="grid gap-1">
+                  <NavLink
+                    to={item.path}
+                    onClick={onClose}
+                    className={cn(
+                      'flex items-center justify-between gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition',
+                      active
+                        ? 'bg-brand-500/10 text-brand-700 shadow-soft dark:text-brand-200'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white',
+                    )}
+                  >
+                    <span className="flex items-center gap-3">
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </span>
+                    <ChevronDown className={cn('h-4 w-4 transition', active ? 'rotate-180' : '')} />
+                  </NavLink>
+                  <div className="ml-4 grid gap-1 border-l border-slate-200 pl-3 dark:border-white/10">
+                    {item.children.map((child) => {
+                      const ChildIcon = iconMap[child.icon as keyof typeof iconMap] ?? LayoutDashboard;
+                      return (
+                        <NavLink
+                          key={child.key}
+                          to={child.path}
+                          onClick={onClose}
+                          className={({ isActive }) =>
+                            cn(
+                              'flex items-center gap-3 rounded-2xl px-4 py-2 text-sm font-medium transition',
+                              isActive
+                                ? 'bg-brand-500/10 text-brand-700 shadow-soft dark:text-brand-200'
+                                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-white/5 dark:hover:text-white',
+                            )
+                          }
+                        >
+                          <ChildIcon className="h-4 w-4" />
+                          <span>{child.label}</span>
+                        </NavLink>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            }
+
             return (
               <NavLink
                 key={item.key}

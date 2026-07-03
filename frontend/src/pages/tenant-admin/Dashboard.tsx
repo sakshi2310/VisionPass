@@ -36,7 +36,7 @@ export function TenantAdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  usePageTitle('VisionPass AI | ' + (currentTenant?.name ?? 'Tenant Admin'));
+  usePageTitle('Vision Pass | ' + (currentTenant?.name ?? 'Tenant Admin'));
 
   async function loadDashboard() {
     try {

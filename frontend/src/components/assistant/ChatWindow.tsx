@@ -50,7 +50,7 @@ export function ChatWindow({ messages, input, setInput, onSend, chips }: ChatWin
           <Input
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask VisionPass AI something like: Show unknown visitors after 7 PM"
+            placeholder="Ask Vision Pass something like: Show unknown visitors after 7 PM"
           />
           <Button type="submit" rightIcon={<Send className="h-4 w-4" />}>
             Ask

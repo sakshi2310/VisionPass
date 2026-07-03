@@ -19,19 +19,16 @@ class AuditLog(Base):
         PGUUID(as_uuid=False),
         ForeignKey("super_admins.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     tenant_member_id: Mapped[str | None] = mapped_column(
         PGUUID(as_uuid=False),
         ForeignKey("tenant_members.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     tenant_id: Mapped[str | None] = mapped_column(
         PGUUID(as_uuid=False),
         ForeignKey("tenants.id", ondelete="SET NULL"),
         nullable=True,
-        index=True,
     )
     action: Mapped[str] = mapped_column(String(150), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)

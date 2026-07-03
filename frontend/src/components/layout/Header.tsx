@@ -103,7 +103,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             </div>
             <div className="hidden sm:block">
               <div className="text-sm font-medium text-slate-900 dark:text-white">{user?.name ?? "Account"}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">{user?.title ?? "VisionPass AI"}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{user?.title ?? "Vision Pass"}</div>
             </div>
             <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
           </summary>

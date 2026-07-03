@@ -137,6 +137,7 @@ export interface NavItem {
   icon: string;
   moduleKey?: ModuleKey;
   adminOnly?: boolean;
+  children?: NavItem[];
 }
 
 export interface ModuleDefinition {

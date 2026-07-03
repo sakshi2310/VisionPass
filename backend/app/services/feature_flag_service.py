@@ -211,13 +211,8 @@ def set_member_modules(
     if invalid_codes:
         raise ValueError("Features must already be enabled for the tenant: " + ", ".join(invalid_codes))
 
-    existing_rows = (
-        db.query(MemberFeature)
-        .filter(MemberFeature.tenant_member_id == member_id)
-        .all()
-    )
-    for row in existing_rows:
-        db.delete(row)
+    db.query(MemberFeature).filter(MemberFeature.tenant_member_id == member_id).delete(synchronize_session=False)
+    db.flush()
 
     updated_rows: list[MemberFeature] = []
     unique_codes = sorted(set(normalized_codes))

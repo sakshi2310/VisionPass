@@ -17,7 +17,7 @@ export function TenantUserFeatures() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  usePageTitle("VisionPass AI | My Features");
+  usePageTitle("Vision Pass | My Features");
 
   async function loadFeatures() {
     try {

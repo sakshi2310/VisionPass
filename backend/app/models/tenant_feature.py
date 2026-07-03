@@ -20,9 +20,8 @@ class TenantFeature(Base):
         PGUUID(as_uuid=False),
         ForeignKey("tenants.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
-    feature_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    feature_code: Mapped[str] = mapped_column(String(100), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     updated_by_super_admin_id: Mapped[str | None] = mapped_column(

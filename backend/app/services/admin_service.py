@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.logger import get_logger
 from app.core.security import hash_password
-from app.models.auth_session import AuthSession
+from app.models.alert import Alert
+from app.models.auth_session import AuthSession
+from app.models.camera import Camera
 from app.models.cv_feature import CvFeature
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -57,9 +59,13 @@ def _tenant_payload(db: Session, tenant: Tenant) -> dict:
         "features_count": len(enabled_modules),
         "enabled_modules": enabled_modules,
         "users": user_count,
-        "sites": 1 if tenant.status == "active" else 0,
-        "alerts_today": len(enabled_modules) if enabled_modules else 0,
-        "cameras": max(1, len(enabled_modules) * 2) if enabled_modules else 0,
+        # Physical sites are not a persisted MVP resource.
+        "sites": 0,
+        "alerts_today": db.query(Alert.id).filter(
+            Alert.tenant_id == tenant.id,
+            func.date(Alert.created_at) == datetime.now(timezone.utc).date(),
+        ).count(),
+        "cameras": db.query(Camera.id).filter(Camera.tenant_id == tenant.id).count(),
         "created_at": tenant.created_at,
         "updated_at": tenant.updated_at,
     }

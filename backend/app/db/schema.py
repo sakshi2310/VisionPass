@@ -3,12 +3,11 @@
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
-from app.db.base import Base
-
 
 def prepare_postgres_schema(engine: Engine) -> None:
     with engine.begin() as connection:
         connection.execute(text("CREATE EXTENSION IF NOT EXISTS pgcrypto"))
+        connection.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         connection.execute(
             text(
                 """
@@ -35,7 +34,6 @@ def prepare_postgres_schema(engine: Engine) -> None:
                 """
             )
         )
-    Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         connection.execute(
             text(

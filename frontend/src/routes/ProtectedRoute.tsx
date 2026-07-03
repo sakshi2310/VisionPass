@@ -14,14 +14,6 @@ function isSuperAdmin(role: Role) {
   return role === "SUPER_ADMIN";
 }
 
-function isTenantAdmin(role: Role) {
-  return role === "TENANT_ADMIN";
-}
-
-function isTenantUser(role: Role) {
-  return role === "TENANT_USER";
-}
-
 function loginPathForRoles(allowedRoles?: Role[]) {
   if (allowedRoles?.length === 1 && allowedRoles[0] === "SUPER_ADMIN") return "/admin/login";
   return "/login";
@@ -29,6 +21,7 @@ function loginPathForRoles(allowedRoles?: Role[]) {
 
 function redirectForRole(role: Role) {
   if (isSuperAdmin(role)) return "/admin/login";
+  if (role === "CLIENT_ADMIN") return "/client-admin/dashboard";
   return "/login";
 }
 
@@ -39,7 +32,7 @@ function accessDeniedMessage(allowedRoles?: Role[], requiredModule?: ModuleKey) 
   if (allowedRoles?.includes("SUPER_ADMIN") && allowedRoles.length === 1) {
     return "Super admin access required.";
   }
-  if (allowedRoles?.includes("TENANT_ADMIN") && allowedRoles.length === 1) {
+  if ((allowedRoles?.includes("TENANT_ADMIN") || allowedRoles?.includes("CLIENT_ADMIN")) && allowedRoles.length === 1) {
     return "Tenant admin access required.";
   }
   if (allowedRoles?.includes("TENANT_USER") && allowedRoles.length === 1) {

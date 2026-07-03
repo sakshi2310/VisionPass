@@ -7,8 +7,6 @@ import {
   type ReactNode,
 } from "react";
 
-import { tenants as seedTenants } from "@/data/mockData";
-import { featureRules as seedFeatureRules } from "@/data/mockData";
 import {
   clearSession,
   changePassword as changePasswordRequest,
@@ -55,16 +53,16 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [theme, setThemeState] = useState<ThemeMode>(() => loadStoredTheme());
-  const [tenants, setTenants] = useState<Tenant[]>(() => loadStoredTenants(seedTenants));
+  const [tenants, setTenants] = useState<Tenant[]>(() => loadStoredTenants([]));
   const [authReady, setAuthReady] = useState(false);
   const [featureRules, setFeatureRules] = useState<FeatureRule[]>(() => {
-    if (typeof window === "undefined") return seedFeatureRules;
+    if (typeof window === "undefined") return [];
     const raw = localStorage.getItem("visionpass-feature-rules");
-    return raw ? (JSON.parse(raw) as FeatureRule[]) : seedFeatureRules;
+    return raw ? (JSON.parse(raw) as FeatureRule[]) : [];
   });
   const [userModuleKeys, setUserModuleKeys] = useState<string[]>(() => loadStoredUserModuleKeys());
   const [currentTenantId, setCurrentTenantIdState] = useState<string>(() => {
-    return loadStoredTenantId() ?? seedTenants[0].id;
+    return loadStoredTenantId() ?? "";
   });
 
   async function loadAdminTenants() {
@@ -128,7 +126,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       setUser(currentUser);
       if (currentUser) {
-        setCurrentTenantIdState(currentUser.tenantId || seedTenants[0].id);
+        setCurrentTenantIdState(currentUser.tenantId || "");
         if (currentUser.role === "SUPER_ADMIN") {
           await loadAdminTenants();
         }
@@ -145,7 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (user && !tenants.some((tenant) => tenant.id === currentTenantId)) {
-      setCurrentTenantIdState(user.tenantId || seedTenants[0].id);
+      setCurrentTenantIdState(user.tenantId || "");
     }
   }, [currentTenantId, tenants, user]);
 
@@ -218,7 +216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         const session = await loginRequest(email, password);
         setUser(session.user);
-        setCurrentTenantIdState(session.user.tenantId || seedTenants[0].id);
+        setCurrentTenantIdState(session.user.tenantId || "");
         if (session.user.role === "SUPER_ADMIN") {
           try {
             await loadAdminTenants();
@@ -238,7 +236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signup: async (fullName, email, organizationName, password) => {
         const session = await signupRequest(fullName, email, organizationName, password);
         setUser(session.user);
-        setCurrentTenantIdState(session.user.tenantId || seedTenants[0].id);
+        setCurrentTenantIdState(session.user.tenantId || "");
         if (session.user.role === "SUPER_ADMIN") {
           try {
             await loadAdminTenants();
@@ -263,8 +261,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       logout: async () => {
         await logoutRequest();
         setUser(null);
-        setTenants(seedTenants);
-        setCurrentTenantIdState(seedTenants[0].id);
+        setTenants([]);
+        setCurrentTenantIdState("");
         setUserModuleKeys([]);
         clearStoredUserModuleKeys();
       },

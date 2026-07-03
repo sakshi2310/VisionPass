@@ -10,7 +10,7 @@ export function BrandWordmark({ compact }: BrandWordmarkProps) {
       <BrandMark className={compact ? "h-10 w-10" : "h-12 w-12"} />
       <div>
         <div className={compact ? "text-base font-semibold tracking-tight text-slate-900 dark:text-white" : "text-lg font-semibold tracking-tight text-slate-900 dark:text-white"}>
-          VisionPass AI
+          Vision Pass
         </div>
         {!compact ? (
           <div className="text-sm text-slate-500 dark:text-slate-400">Secure visitor and access intelligence</div>

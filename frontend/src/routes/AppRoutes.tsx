@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+﻿import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthLayout } from "@/layouts/AuthLayout";
@@ -13,9 +13,25 @@ const TenantAdminDashboard = lazy(() => import("@/pages/tenant-admin/Dashboard")
 const TenantAdminMembers = lazy(() => import("@/pages/tenant-admin/Members").then((module) => ({ default: module.TenantAdminMembers })));
 const TenantAdminFeatures = lazy(() => import("@/pages/tenant-admin/Features").then((module) => ({ default: module.TenantAdminFeatures })));
 const TenantAdminSettings = lazy(() => import("@/pages/tenant-admin/Settings").then((module) => ({ default: module.TenantAdminSettings })));
+const AttendanceSettingsPage = lazy(() => import("@/pages/client-admin/attendance/Settings").then((module) => ({ default: module.AttendanceSettingsPage })));
+const AttendanceShiftsPage = lazy(() => import("@/pages/client-admin/attendance/Shifts").then((module) => ({ default: module.AttendanceShiftsPage })));
+const AttendanceHolidaysPage = lazy(() => import("@/pages/client-admin/attendance/Holidays").then((module) => ({ default: module.AttendanceHolidaysPage })));
+const EmployeeListPage = lazy(() => import("@/pages/client-admin/attendance/Employees").then((module) => ({ default: module.EmployeeListPage })));
+const EmployeeDetailsPage = lazy(() => import("@/pages/client-admin/attendance/EmployeeDetails").then((module) => ({ default: module.EmployeeDetailsPage })));
+const FaceEnrollmentPage = lazy(() => import("@/pages/client-admin/attendance/FaceEnrollment").then((module) => ({ default: module.FaceEnrollmentPage })));
+const LiveAttendancePage = lazy(() => import("@/pages/client-admin/attendance/LiveAttendance").then((module) => ({ default: module.LiveAttendancePage })));
+const CamerasPage = lazy(() => import("@/pages/client-admin/Cameras").then((module) => ({ default: module.CamerasPage })));
+const LiveRecognitionPage = lazy(() => import("@/pages/client-admin/LiveRecognition").then((module) => ({ default: module.LiveRecognitionPage })));
+const ClientAdminDashboard = lazy(() => import("@/pages/client-admin/Dashboard").then((module) => ({ default: module.ClientAdminDashboard })));
+const ReportsPage = lazy(() => import("@/pages/client-admin/Reports").then((module) => ({ default: module.ReportsPage })));
+const Visitors = lazy(() => import("@/pages/client/Visitors").then((module) => ({ default: module.Visitors })));
+const AccessControl = lazy(() => import("@/pages/client/AccessControl").then((module) => ({ default: module.AccessControl })));
+const Alerts = lazy(() => import("@/pages/client/Alerts").then((module) => ({ default: module.Alerts })));
 const TenantUserDashboard = lazy(() => import("@/pages/user/Dashboard").then((module) => ({ default: module.TenantUserDashboard })));
-const TenantUserFeatures = lazy(() => import("@/pages/user/Features").then((module) => ({ default: module.TenantUserFeatures })));
 const TenantUserProfile = lazy(() => import("@/pages/user/Profile").then((module) => ({ default: module.TenantUserProfile })));
+const TenantUserAttendance = lazy(() => import("@/pages/user/Attendance").then((module) => ({ default: module.TenantUserAttendance })));
+const TenantUserNotifications = lazy(() => import("@/pages/user/Notifications").then((module) => ({ default: module.TenantUserNotifications })));
+const TenantUserSettings = lazy(() => import("@/pages/user/Settings").then((module) => ({ default: module.TenantUserSettings })));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard").then((module) => ({ default: module.AdminDashboard })));
 const Tenants = lazy(() => import("@/pages/admin/Tenants").then((module) => ({ default: module.Tenants })));
 const TenantDetails = lazy(() => import("@/pages/admin/TenantDetails").then((module) => ({ default: module.TenantDetails })));
@@ -28,6 +44,7 @@ function HomeRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === "SUPER_ADMIN") return <Navigate to="/admin/dashboard" replace />;
   if (user.role === "TENANT_ADMIN") return <Navigate to="/tenant-admin/dashboard" replace />;
+  if (user.role === "CLIENT_ADMIN") return <Navigate to="/client-admin/dashboard" replace />;
   if (user.role === "TENANT_USER") return <Navigate to="/user/dashboard" replace />;
   return <Navigate to="/login" replace />;
 }
@@ -42,7 +59,7 @@ export function AppRoutes() {
       fallback={
         <div className="grid min-h-screen place-items-center bg-slate-50 text-slate-700 dark:bg-slate-950 dark:text-slate-200">
           <div className="rounded-3xl border border-slate-200 bg-white px-6 py-4 text-sm shadow-soft backdrop-blur dark:border-white/10 dark:bg-white/5">
-            Loading VisionPass AI...
+            Loading Vision Pass...
           </div>
         </div>
       }
@@ -70,18 +87,40 @@ export function AppRoutes() {
               <Route path="/admin/settings" element={<Navigate to="/admin/dashboard" replace />} />
             </Route>
 
-            <Route element={<ProtectedRoute allowedRoles={["TENANT_ADMIN"]} />}>
+            <Route element={<ProtectedRoute allowedRoles={["TENANT_ADMIN", "CLIENT_ADMIN"]} />}>
               <Route path="/tenant-admin/dashboard" element={<TenantAdminDashboard />} />
               <Route path="/tenant-admin/members" element={<TenantAdminMembers />} />
               <Route path="/tenant-admin/features" element={<TenantAdminFeatures />} />
               <Route path="/tenant-admin/settings" element={<TenantAdminSettings />} />
+
+              <Route path="/client-admin/dashboard" element={<ClientAdminDashboard />} />
+              <Route path="/client-admin/members" element={<TenantAdminMembers />} />
+              <Route path="/client-admin/features" element={<TenantAdminFeatures />} />
+              <Route path="/client-admin/settings" element={<TenantAdminSettings />} />
+              <Route path="/client-admin/attendance/settings" element={<AttendanceSettingsPage />} />
+              <Route path="/client-admin/attendance/shifts" element={<AttendanceShiftsPage />} />
+              <Route path="/client-admin/attendance/holidays" element={<AttendanceHolidaysPage />} />
+              <Route path="/client-admin/attendance/employees" element={<EmployeeListPage />} />
+              <Route path="/client-admin/attendance/employees/:id" element={<EmployeeDetailsPage />} />
+              <Route path="/client-admin/attendance/face-enrollment" element={<FaceEnrollmentPage />} />
+              <Route path="/client-admin/attendance/live" element={<LiveAttendancePage />} />
+              <Route path="/client-admin/cameras" element={<CamerasPage />} />
+              <Route path="/client-admin/cameras/live" element={<LiveRecognitionPage />} />
+              <Route path="/client-admin/visitors" element={<Visitors />} />
+              <Route path="/client-admin/access-control" element={<AccessControl />} />
+              <Route path="/client-admin/alerts" element={<Alerts />} />
+              <Route path="/client-admin/reports" element={<ReportsPage />} />
+
               <Route path="/tenant-admin/*" element={<Navigate to="/tenant-admin/dashboard" replace />} />
+              <Route path="/client-admin/*" element={<Navigate to="/client-admin/dashboard" replace />} />
             </Route>
 
             <Route element={<ProtectedRoute allowedRoles={["TENANT_USER"]} />}>
               <Route path="/user/dashboard" element={<TenantUserDashboard />} />
-              <Route path="/user/features" element={<TenantUserFeatures />} />
+              <Route path="/user/attendance" element={<TenantUserAttendance />} />
               <Route path="/user/profile" element={<TenantUserProfile />} />
+              <Route path="/user/notifications" element={<TenantUserNotifications />} />
+              <Route path="/user/settings" element={<TenantUserSettings />} />
               <Route path="/user/*" element={<Navigate to="/user/dashboard" replace />} />
             </Route>
           </Route>
@@ -92,4 +131,3 @@ export function AppRoutes() {
     </Suspense>
   );
 }
-

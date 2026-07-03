@@ -20,9 +20,8 @@ class MemberFeature(Base):
         PGUUID(as_uuid=False),
         ForeignKey("tenant_members.id", ondelete="CASCADE"),
         nullable=False,
-        index=True,
     )
-    feature_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    feature_code: Mapped[str] = mapped_column(String(100), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

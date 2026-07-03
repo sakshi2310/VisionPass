@@ -306,3 +306,50 @@ export const adminApi = {
       body: JSON.stringify({ enabled }),
     }),
 };
+
+export type AdminFaceSettings = {
+  id: string;
+  tenant_id: string;
+  face_match_threshold: number;
+  min_face_images: number;
+  recommended_face_images: number;
+  max_face_images: number;
+  min_face_size_px: number;
+  min_resolution_width: number;
+  min_resolution_height: number;
+  max_blur_score: number;
+  min_brightness: number;
+  max_brightness: number;
+  embedding_model: string;
+  embedding_version?: string | null;
+  embedding_dimension: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdminFaceSettingsPayload = Partial<{
+  face_match_threshold: number;
+  min_face_images: number;
+  recommended_face_images: number;
+  max_face_images: number;
+  min_face_size_px: number;
+  min_resolution_width: number;
+  min_resolution_height: number;
+  max_blur_score: number;
+  min_brightness: number;
+  max_brightness: number;
+  embedding_model: string;
+  embedding_version: string | null;
+  embedding_dimension: number;
+  is_active: boolean;
+}>;
+
+Object.assign(adminApi, {
+  getTenantFaceSettings: (tenantId: string) => requestJson<AdminFaceSettings>(`/api/admin/tenants/${tenantId}/face-settings`),
+  updateTenantFaceSettings: (tenantId: string, payload: AdminFaceSettingsPayload) =>
+    requestJson<AdminFaceSettings>(`/api/admin/tenants/${tenantId}/face-settings`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }),
+});

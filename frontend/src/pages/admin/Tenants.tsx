@@ -74,7 +74,7 @@ export function Tenants() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pageSize = 10;
 
-  usePageTitle('VisionPass AI | Tenants');
+  usePageTitle('Vision Pass | Tenants');
 
   const activeFeatures = useMemo(() => features.filter((feature) => feature.status === 'active'), [features]);
 

@@ -1,4 +1,4 @@
-import type { ModuleDefinition, NavItem } from "@/types";
+﻿import type { ModuleDefinition, NavItem } from "@/types";
 
 export const moduleDefinitions: ModuleDefinition[] = [
   {
@@ -16,6 +16,21 @@ export const moduleDefinitions: ModuleDefinition[] = [
     icon: "ScanFace",
   },
 ];
+
+const attendanceNavGroup: NavItem = {
+  key: "tenant-attendance",
+  label: "Attendance",
+  path: "/client-admin/attendance/settings",
+  icon: "CalendarCheck2",
+  children: [
+    { key: "tenant-attendance-live", label: "Live Attendance", path: "/client-admin/attendance/live", icon: "ScanFace" },
+    { key: "tenant-attendance-settings", label: "Attendance Settings", path: "/client-admin/attendance/settings", icon: "Settings2" },
+    { key: "tenant-attendance-shifts", label: "Shift Management", path: "/client-admin/attendance/shifts", icon: "CalendarCheck2" },
+    { key: "tenant-attendance-holidays", label: "Holiday Management", path: "/client-admin/attendance/holidays", icon: "ClipboardList" },
+    { key: "tenant-attendance-employees", label: "Employees", path: "/client-admin/attendance/employees", icon: "Users" },
+    { key: "tenant-attendance-face-enrollment", label: "Face Enrollment", path: "/client-admin/attendance/face-enrollment", icon: "ScanFace" },
+  ],
+};
 
 export const clientNavItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: "LayoutDashboard" },
@@ -45,6 +60,21 @@ export const clientNavItems: NavItem[] = [
 
 export const tenantAdminNavItems: NavItem[] = [
   { key: "tenant-dashboard", label: "Dashboard", path: "/tenant-admin/dashboard", icon: "LayoutDashboard" },
+  attendanceNavGroup,
+  { key: "tenant-visitors", label: "Visitors", path: "/client-admin/visitors", icon: "Users" },
+  { key: "tenant-access", label: "Access Logs", path: "/client-admin/access-control", icon: "ShieldCheck" },
+  { key: "tenant-alerts", label: "Alerts", path: "/client-admin/alerts", icon: "ClipboardList" },
+  { key: "tenant-reports", label: "Reports", path: "/client-admin/reports", icon: "ChartColumnIncreasing" },
+  {
+    key: "tenant-cameras",
+    label: "Cameras",
+    path: "/client-admin/cameras",
+    icon: "DoorOpen",
+    children: [
+      { key: "tenant-camera-management", label: "Camera Management", path: "/client-admin/cameras", icon: "DoorOpen" },
+      { key: "tenant-live-recognition", label: "Live Recognition", path: "/client-admin/cameras/live", icon: "ScanFace" },
+    ],
+  },
   { key: "tenant-members", label: "Members", path: "/tenant-admin/members", icon: "Users" },
   { key: "tenant-features", label: "Features", path: "/tenant-admin/features", icon: "Sparkles" },
   { key: "tenant-settings", label: "Settings", path: "/tenant-admin/settings", icon: "Settings2" },
@@ -52,8 +82,10 @@ export const tenantAdminNavItems: NavItem[] = [
 
 export const tenantMemberNavItems: NavItem[] = [
   { key: "user-dashboard", label: "Dashboard", path: "/user/dashboard", icon: "LayoutDashboard" },
-  { key: "user-features", label: "My Features", path: "/user/features", icon: "Sparkles" },
-  { key: "user-profile", label: "Profile", path: "/user/profile", icon: "Users" },
+  { key: "user-attendance", label: "My Attendance", path: "/user/attendance", icon: "CalendarCheck2" },
+  { key: "user-profile", label: "My Profile", path: "/user/profile", icon: "UserRound" },
+  { key: "user-notifications", label: "Notifications", path: "/user/notifications", icon: "Bell" },
+  { key: "user-settings", label: "Settings", path: "/user/settings", icon: "Settings2" },
 ];
 
 export const tenantUserNavItems: NavItem[] = [

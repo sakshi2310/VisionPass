@@ -6,7 +6,7 @@ import path from "node:path";
 const dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  base: "./",
+  base: "/",
   plugins: [react()],
   server: {
     proxy: {

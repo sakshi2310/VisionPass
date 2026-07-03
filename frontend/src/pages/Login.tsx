@@ -33,7 +33,7 @@ export function Login() {
   const [error, setError] = useState("");
   const [signIn, setSignIn] = useState({ email: "", password: "" });
   const [signInErrors, setSignInErrors] = useState<SignInErrors>({});
-  const workspaceName = searchParams.get("org")?.trim() || searchParams.get("tenant")?.trim() || "VisionPass AI Platform";
+  const workspaceName = searchParams.get("org")?.trim() || searchParams.get("tenant")?.trim() || "Vision Pass Platform";
   const stateMessage = (location.state as LocationState | null | undefined)?.message;
 
   useEffect(() => {
