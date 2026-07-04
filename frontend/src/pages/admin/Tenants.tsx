@@ -18,7 +18,8 @@ function usePageTitle(title: string) {
 type TenantDraft = {
   organization_name: string;
   full_name: string;
-  email: string;
+  company_email: string;
+  admin_email: string;
   phone: string;
   password: string;
   address: string;
@@ -35,7 +36,8 @@ type Mode = 'create' | 'edit' | null;
 const emptyDraft: TenantDraft = {
   organization_name: '',
   full_name: '',
-  email: '',
+  company_email: '',
+  admin_email: '',
   phone: '',
   password: '',
   address: '',
@@ -74,7 +76,7 @@ export function Tenants() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pageSize = 10;
 
-  usePageTitle('VisionPass AI | Tenants');
+  usePageTitle('Vision Pass | Tenants');
 
   const activeFeatures = useMemo(() => features.filter((feature) => feature.status === 'active'), [features]);
 
@@ -83,7 +85,9 @@ export function Tenants() {
     return tenants.filter((tenant) => {
       const matchesSearch =
         !term ||
-        [tenant.name, tenant.adminName ?? '', tenant.adminEmail ?? '', tenant.phone ?? ''].some((value) => value.toLowerCase().includes(term));
+        [tenant.name, tenant.companyEmail ?? '', tenant.adminName ?? '', tenant.adminEmail ?? '', tenant.phone ?? ''].some((value) =>
+          value.toLowerCase().includes(term),
+        );
       const matchesStatus = statusFilter === 'all' || tenant.status === statusFilter;
       return matchesSearch && matchesStatus;
     });
@@ -132,7 +136,8 @@ export function Tenants() {
     setDraft({
       organization_name: tenant.name,
       full_name: tenant.adminName ?? '',
-      email: tenant.adminEmail ?? '',
+      company_email: tenant.companyEmail ?? '',
+      admin_email: tenant.adminEmail ?? '',
       phone: tenant.phone ?? '',
       password: '',
       address: tenant.address ?? '',
@@ -154,8 +159,8 @@ export function Tenants() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.organization_name.trim() || !draft.full_name.trim() || !draft.email.trim()) {
-      setError('Organization name, admin name, and admin email are required.');
+    if (!draft.organization_name.trim() || !draft.company_email.trim() || !draft.full_name.trim() || !draft.admin_email.trim()) {
+      setError('Company name, company email, admin name, and admin email are required.');
       return;
     }
     if (mode === 'create' && !draft.password.trim()) {
@@ -168,7 +173,8 @@ export function Tenants() {
       if (mode === 'create') {
         await adminApi.createTenant({
           full_name: draft.full_name,
-          email: draft.email,
+          email: draft.admin_email,
+          company_email: draft.company_email,
           phone: draft.phone || undefined,
           password: draft.password,
           organization_name: draft.organization_name,
@@ -183,8 +189,9 @@ export function Tenants() {
       } else if (selectedTenantId) {
         await adminApi.updateTenant(selectedTenantId, {
           name: draft.organization_name,
+          company_email: draft.company_email,
           admin_name: draft.full_name,
-          admin_email: draft.email,
+          admin_email: draft.admin_email,
           phone: draft.phone,
           logo_url: draft.logo_url,
           address: draft.address,
@@ -291,7 +298,7 @@ export function Tenants() {
                       <div className="font-medium text-slate-900 dark:text-white">{tenant.name}</div>
                       <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{tenant.industry}</div>
                     </td>
-                    <td className="px-5 py-4 align-top text-sm text-slate-600 dark:text-slate-300">{tenant.adminEmail ?? '-'}</td>
+                    <td className="px-5 py-4 align-top text-sm text-slate-600 dark:text-slate-300">{tenant.companyEmail ?? '-'}</td>
                     <td className="px-5 py-4 align-top text-sm text-slate-600 dark:text-slate-300">{tenant.phone ?? '-'}</td>
                     <td className="px-5 py-4 align-top"><Badge tone={tenantStatusTone(tenant.status)}>{tenant.status}</Badge></td>
                     <td className="px-5 py-4 align-top text-sm text-slate-600 dark:text-slate-300">{formatDate(tenant.created_at)}</td>
@@ -346,7 +353,7 @@ export function Tenants() {
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">Organization Details</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input label="Company Name" value={draft.organization_name} onChange={(event) => setDraft((current) => ({ ...current, organization_name: event.target.value }))} />
-                <Input label="Company Email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
+                <Input label="Company Email" type="email" value={draft.company_email} onChange={(event) => setDraft((current) => ({ ...current, company_email: event.target.value }))} />
                 <Input label="Phone" value={draft.phone} onChange={(event) => setDraft((current) => ({ ...current, phone: event.target.value }))} />
                 <Input label="Address" value={draft.address} onChange={(event) => setDraft((current) => ({ ...current, address: event.target.value }))} />
                 <Input label="Logo URL" value={draft.logo_url} onChange={(event) => setDraft((current) => ({ ...current, logo_url: event.target.value }))} helpText="Optional logo location or uploaded asset URL." />
@@ -365,7 +372,7 @@ export function Tenants() {
               <h3 className="text-base font-semibold text-slate-900 dark:text-white">First Tenant Admin</h3>
               <div className="grid gap-4 md:grid-cols-2">
                 <Input label="Admin Name" value={draft.full_name} onChange={(event) => setDraft((current) => ({ ...current, full_name: event.target.value }))} />
-                <Input label="Admin Email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
+                <Input label="Admin Email" type="email" value={draft.admin_email} onChange={(event) => setDraft((current) => ({ ...current, admin_email: event.target.value }))} />
                 {mode === 'create' ? (
                   <Input label="Admin Password" type="password" value={draft.password} onChange={(event) => setDraft((current) => ({ ...current, password: event.target.value }))} />
                 ) : (

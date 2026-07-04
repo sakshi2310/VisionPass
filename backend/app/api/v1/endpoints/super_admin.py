@@ -41,7 +41,12 @@ def get_features(
     db: Session = Depends(database_session),
     _=Depends(require_role(["SUPER_ADMIN"])),
 ) -> CvFeatureListResponse:
-    return CvFeatureListResponse(features=[CvFeatureRead.model_validate(feature) for feature in list_master_features(db)])
+    return CvFeatureListResponse(
+        features=[
+            CvFeatureRead.model_validate(feature)
+            for feature in list_master_features(db, include_deleted=True)
+        ]
+    )
 
 
 @router.post("/features", response_model=CvFeatureRead, status_code=status.HTTP_201_CREATED)

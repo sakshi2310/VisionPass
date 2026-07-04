@@ -103,7 +103,7 @@ export function Header({ onMenuClick }: HeaderProps) {
             </div>
             <div className="hidden sm:block">
               <div className="text-sm font-medium text-slate-900 dark:text-white">{user?.name ?? "Account"}</div>
-              <div className="text-xs text-slate-500 dark:text-slate-400">{user?.title ?? "VisionPass AI"}</div>
+              <div className="text-xs text-slate-500 dark:text-slate-400">{user?.title ?? "Vision Pass"}</div>
             </div>
             <ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
           </summary>
@@ -123,9 +123,8 @@ export function Header({ onMenuClick }: HeaderProps) {
             <button
               type="button"
               onClick={async () => {
-                const role = user?.role;
                 await logout();
-                navigate(role === "SUPER_ADMIN" ? "/admin/login" : "/login", { replace: true });
+                navigate("/login", { replace: true });
               }}
               className="mt-2 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/5"
             >

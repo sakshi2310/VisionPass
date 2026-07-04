@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from jose import jwt
+from cryptography.fernet import Fernet, InvalidToken
 
 from app.core.config import settings
 
@@ -68,3 +69,25 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return hmac.compare_digest(actual, expected)
     except (ValueError, TypeError, base64.binascii.Error):
         return False
+
+
+def _credential_cipher() -> Fernet:
+    key = hashlib.sha256(settings.jwt_secret.encode("utf-8")).digest()
+    return Fernet(base64.urlsafe_b64encode(key))
+
+
+def encrypt_credential(value: str) -> str:
+    """Encrypt a reversible integration credential for storage."""
+
+    return _credential_cipher().encrypt(value.encode("utf-8")).decode("utf-8")
+
+
+def decrypt_credential(value: str | None) -> str | None:
+    """Decrypt an integration credential without exposing invalid ciphertext."""
+
+    if not value:
+        return None
+    try:
+        return _credential_cipher().decrypt(value.encode("utf-8")).decode("utf-8")
+    except (InvalidToken, ValueError):
+        return None

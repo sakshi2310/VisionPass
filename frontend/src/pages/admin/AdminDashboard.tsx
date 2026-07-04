@@ -86,7 +86,7 @@ export function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  usePageTitle('VisionPass AI | Dashboard');
+  usePageTitle('Vision Pass | Dashboard');
 
   async function loadDashboard() {
     try {

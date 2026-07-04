@@ -57,7 +57,7 @@ export function TenantAdminMembers() {
   const [pendingDelete, setPendingDelete] = useState<TenantAdminMember | null>(null);
   const pageSize = 8;
 
-  usePageTitle("VisionPass AI | Tenant Members");
+  usePageTitle("Vision Pass | Tenant Members");
 
   async function loadMembers() {
     try {

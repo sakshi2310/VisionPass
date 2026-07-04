@@ -7,6 +7,7 @@ import { AuthInput } from "@/components/auth/AuthInput";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useApp } from "@/context/AppContext";
+import { dashboardPathForRole } from "@/utils/authRouting";
 
 type SignInErrors = {
   email?: string;
@@ -17,13 +18,6 @@ type LocationState = {
   message?: string;
 };
 
-function redirectForRole(role: string) {
-  if (role === "SUPER_ADMIN") return "/admin/dashboard";
-  if (role === "TENANT_ADMIN") return "/tenant-admin/dashboard";
-  if (role === "TENANT_USER") return "/user/dashboard";
-  return "/login";
-}
-
 export function Login() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -33,12 +27,12 @@ export function Login() {
   const [error, setError] = useState("");
   const [signIn, setSignIn] = useState({ email: "", password: "" });
   const [signInErrors, setSignInErrors] = useState<SignInErrors>({});
-  const workspaceName = searchParams.get("org")?.trim() || searchParams.get("tenant")?.trim() || "VisionPass AI Platform";
+  const workspaceName = searchParams.get("org")?.trim() || searchParams.get("tenant")?.trim() || "Vision Pass Platform";
   const stateMessage = (location.state as LocationState | null | undefined)?.message;
 
   useEffect(() => {
     if (!authReady || !user) return;
-    navigate(redirectForRole(user.role), { replace: true });
+    navigate(dashboardPathForRole(user.role), { replace: true });
   }, [authReady, navigate, user]);
 
   useEffect(() => {
@@ -69,7 +63,7 @@ export function Login() {
     try {
       setIsSubmitting(true);
       const user = await login(signIn.email, signIn.password);
-      navigate(redirectForRole(user.role), { replace: true });
+      navigate(dashboardPathForRole(user.role), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to sign in.");
     } finally {

@@ -25,13 +25,11 @@ class AuthSession(Base):
         PGUUID(as_uuid=False),
         ForeignKey("super_admins.id", ondelete="CASCADE"),
         nullable=True,
-        index=True,
     )
     tenant_member_id: Mapped[str | None] = mapped_column(
         PGUUID(as_uuid=False),
         ForeignKey("tenant_members.id", ondelete="CASCADE"),
         nullable=True,
-        index=True,
     )
     access_token_hash: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

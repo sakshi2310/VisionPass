@@ -19,7 +19,11 @@ async def lifespan(app: FastAPI):
     prepare_postgres_schema(engine)
     db = SessionLocal()
     try:
-        seed_default_admin(db)
+        if settings.seed_demo_data:
+            seed_default_admin(
+                db,
+                include_operational_data=settings.environment.lower() != "test",
+            )
     finally:
         db.close()
     yield

@@ -29,7 +29,7 @@ export function AuthCard({ mode, onModeChange, title, subtitle, children }: Auth
             <div className="flex items-center gap-3">
               <BrandMark className="h-12 w-12" />
               <div>
-                <div className="text-lg font-semibold tracking-tight">VisionPass AI</div>
+                <div className="text-lg font-semibold tracking-tight">Vision Pass</div>
                 <div className="text-sm text-white/80">Gate and security operations, simplified</div>
               </div>
             </div>

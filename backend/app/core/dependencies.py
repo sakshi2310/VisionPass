@@ -18,7 +18,12 @@ bearer_scheme = HTTPBearer(auto_error=False)
 
 TENANT_USER_ROLES = {
     "tenant_admin",
+    "client_admin",
     "user",
+}
+TENANT_ADMIN_ROLES = {
+    "tenant_admin",
+    "client_admin",
 }
 
 
@@ -115,7 +120,7 @@ def get_current_user(
 
 
 def get_current_tenant_admin(current_user = Depends(get_current_user)):
-    if _normalize_role(getattr(current_user, "role", None)) != "tenant_admin":
+    if _normalize_role(getattr(current_user, "role", None)) not in TENANT_ADMIN_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Tenant admin access required",

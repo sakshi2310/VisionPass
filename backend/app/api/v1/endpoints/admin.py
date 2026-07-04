@@ -1,4 +1,4 @@
-"""Super-admin routes."""
+﻿"""Super-admin routes."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import database_session, require_role
 from app.core.logger import get_logger
 from app.schemas.admin import AdminDashboardSummaryRead, AdminTenantCreate, AdminTenantDetailsRead, AdminTenantRead, AdminTenantUpdate
+from app.schemas.attendance import AttendanceFaceSettingsRead, AttendanceFaceSettingsUpdate
 from app.schemas.audit_log import AdminAuditLogListResponse, AdminAuditLogRead
 from app.schemas.auth import AuthResponse, LoginRequest, TokenResponse
 from app.schemas.cv_feature import CvFeatureCreate, CvFeatureListResponse, CvFeatureRead, CvFeatureUpdate
@@ -14,6 +15,7 @@ from app.services.admin_service import create_admin_tenant, delete_admin_tenant,
 from app.services.audit_service import list_admin_audit_logs
 from app.services.auth_service import authenticate_super_admin_login, issue_login_token
 from app.services.cv_feature_service import create_master_feature, delete_master_feature, list_master_features, update_master_feature
+from app.services.employee_service import get_or_create_face_settings, update_face_settings
 from app.services.feature_flag_service import list_tenant_module_views, set_tenant_modules, upsert_flag
 
 router = APIRouter()
@@ -66,6 +68,7 @@ def create_tenant(
         db=db,
         full_name=payload.full_name,
         email=payload.email,
+        company_email=payload.company_email,
         phone=payload.phone,
         password=payload.password,
         organization_name=payload.organization_name,
@@ -116,6 +119,44 @@ def get_tenant_details(
     return AdminTenantDetailsRead.model_validate(tenant)
 
 
+@router.get("/tenants/{tenant_id}/face-settings", response_model=AttendanceFaceSettingsRead)
+def get_tenant_face_settings(
+    tenant_id: str,
+    db: Session = Depends(database_session),
+    _=Depends(require_role(["SUPER_ADMIN"])),
+) -> AttendanceFaceSettingsRead:
+    settings = get_or_create_face_settings(db, tenant_id)
+    return AttendanceFaceSettingsRead.model_validate(settings)
+
+
+@router.put("/tenants/{tenant_id}/face-settings", response_model=AttendanceFaceSettingsRead)
+def save_tenant_face_settings(
+    tenant_id: str,
+    payload: AttendanceFaceSettingsUpdate,
+    db: Session = Depends(database_session),
+    _=Depends(require_role(["SUPER_ADMIN"])),
+) -> AttendanceFaceSettingsRead:
+    settings = update_face_settings(
+        db,
+        tenant_id,
+        face_match_threshold=payload.face_match_threshold,
+        min_face_images=payload.min_face_images,
+        recommended_face_images=payload.recommended_face_images,
+        max_face_images=payload.max_face_images,
+        min_face_size_px=payload.min_face_size_px,
+        min_resolution_width=payload.min_resolution_width,
+        min_resolution_height=payload.min_resolution_height,
+        max_blur_score=payload.max_blur_score,
+        min_brightness=payload.min_brightness,
+        max_brightness=payload.max_brightness,
+        embedding_model=payload.embedding_model,
+        embedding_version=payload.embedding_version,
+        embedding_dimension=payload.embedding_dimension,
+        is_active=payload.is_active,
+    )
+    return AttendanceFaceSettingsRead.model_validate(settings)
+
+
 @router.patch("/tenants/{tenant_id}", response_model=AdminTenantRead)
 def patch_tenant(
     tenant_id: str,
@@ -127,6 +168,7 @@ def patch_tenant(
         db=db,
         tenant_id=tenant_id,
         name=payload.name,
+        company_email=payload.company_email,
         slug=payload.slug,
         logo_url=payload.logo_url,
         address=payload.address,
@@ -157,7 +199,12 @@ def get_features(
     db: Session = Depends(database_session),
     _=Depends(require_role(["SUPER_ADMIN"])),
 ) -> CvFeatureListResponse:
-    return CvFeatureListResponse(features=[CvFeatureRead.model_validate(feature) for feature in list_master_features(db)])
+    return CvFeatureListResponse(
+        features=[
+            CvFeatureRead.model_validate(feature)
+            for feature in list_master_features(db, include_deleted=True)
+        ]
+    )
 
 
 @router.post("/features", response_model=CvFeatureRead, status_code=status.HTTP_201_CREATED)

@@ -53,7 +53,7 @@ export function Features() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const pageSize = 10;
 
-  usePageTitle('VisionPass AI | Features');
+  usePageTitle('Vision Pass | Features');
 
   const selectedFeature = useMemo(() => features.find((feature) => feature.id === selectedFeatureId) ?? null, [features, selectedFeatureId]);
 
@@ -326,8 +326,8 @@ export function Features() {
 
       <Modal
         open={pendingDeleteId !== null}
-        title="Delete feature"
-        description="This will remove the feature from the catalog and tenant selection lists."
+        title="Permanently delete feature"
+        description="This removes the feature and all tenant/member assignments. Use Disable if you may enable it again later."
         onClose={() => setPendingDeleteId(null)}
         className="max-w-xl"
         footer={
@@ -338,7 +338,7 @@ export function Features() {
         }
       >
         <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-          The feature will be marked inactive or removed from the master catalog depending on backend policy.
+          This action cannot be undone. Disabled features remain in this table with inactive status; deleted features do not.
         </p>
       </Modal>
     </div>

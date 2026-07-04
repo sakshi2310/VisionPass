@@ -9,7 +9,9 @@ from sqlalchemy.orm import Session
 
 from app.core.logger import get_logger
 from app.core.security import hash_password
-from app.models.auth_session import AuthSession
+from app.models.alert import Alert
+from app.models.auth_session import AuthSession
+from app.models.camera import Camera
 from app.models.cv_feature import CvFeature
 from app.models.tenant import Tenant
 from app.models.user import User
@@ -46,7 +48,9 @@ def _tenant_payload(db: Session, tenant: Tenant) -> dict:
         "code": build_tenant_code(tenant.slug),
         "plan": tenant.plan,
         "status": tenant.status,
-        "industry": tenant.industry,
+        "industry": tenant.industry,
+
+        "company_email": tenant.company_email or (None if admin is None else admin.email),
         "logo_url": tenant.logo_url,
         "address": tenant.address,
         "admin_name": None if admin is None else admin.full_name,
@@ -57,9 +61,13 @@ def _tenant_payload(db: Session, tenant: Tenant) -> dict:
         "features_count": len(enabled_modules),
         "enabled_modules": enabled_modules,
         "users": user_count,
-        "sites": 1 if tenant.status == "active" else 0,
-        "alerts_today": len(enabled_modules) if enabled_modules else 0,
-        "cameras": max(1, len(enabled_modules) * 2) if enabled_modules else 0,
+        # Physical sites are not a persisted MVP resource.
+        "sites": 0,
+        "alerts_today": db.query(Alert.id).filter(
+            Alert.tenant_id == tenant.id,
+            func.date(Alert.created_at) == datetime.now(timezone.utc).date(),
+        ).count(),
+        "cameras": db.query(Camera.id).filter(Camera.tenant_id == tenant.id).count(),
         "created_at": tenant.created_at,
         "updated_at": tenant.updated_at,
     }
@@ -138,7 +146,9 @@ def get_admin_tenant_details(db: Session, tenant_id: str) -> dict | None:
 def create_admin_tenant(
     db: Session,
     full_name: str,
-    email: str,
+    email: str,
+
+    company_email: str | None,
     phone: str | None,
     password: str,
     organization_name: str,
@@ -161,7 +171,9 @@ def create_admin_tenant(
         plan="basic",
         industry=industry,
         max_users=max_users,
-        max_devices=max_devices,
+        max_devices=max_devices,
+
+        company_email=company_email or email,
         logo_url=logo_url,
         address=address,
     )
@@ -189,7 +201,9 @@ def update_admin_tenant(
     db: Session,
     tenant_id: str,
     *,
-    name: str | None = None,
+    name: str | None = None,
+
+    company_email: str | None = None,
     slug: str | None = None,
     logo_url: str | None = None,
     address: str | None = None,
@@ -211,7 +225,11 @@ def update_admin_tenant(
 
     if name is not None:
         tenant.name = name
-    if slug is not None:
+    if company_email is not None:
+
+        tenant.company_email = company_email.lower().strip() or None
+
+    if slug is not None:
         tenant.slug = slug
     if logo_url is not None:
         tenant.logo_url = logo_url

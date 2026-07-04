@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 class TenantBase(BaseModel):
     name: str
     slug: str
+    company_email: str | None = None
     logo_url: str | None = None
     address: str | None = None
     industry: str = "General"

@@ -8,7 +8,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 export function TenantAdminSettings() {
   const { user, currentTenant } = useApp();
 
-  usePageTitle("VisionPass AI | Tenant Settings");
+  usePageTitle("Vision Pass | Tenant Settings");
 
   return (
     <div className="grid gap-6">

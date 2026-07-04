@@ -1,16 +1,100 @@
-version: "3.9"
+name: vision-pass
 
 services:
   postgres:
-    image: postgres:16
-    environment:
-      POSTGRES_DB: visionpass
-      POSTGRES_USER: visionpass
-      POSTGRES_PASSWORD: visionpass
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-visionpass}
+      POSTGRES_USER: ${POSTGRES_USER:-visionpass}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - visionpass
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-Vision Pass}
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-visionpass}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-visionpass}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      FACE_MODEL_NAME: ${FACE_MODEL_NAME:-buffalo_l}
+      FACE_DETECTION_CONFIDENCE: ${FACE_DETECTION_CONFIDENCE:-0.60}
+      FACE_RECOGNITION_THRESHOLD: ${FACE_RECOGNITION_THRESHOLD:-0.45}
+      FACE_ENROLLMENT_MIN_QUALITY: ${FACE_ENROLLMENT_MIN_QUALITY:-0.70}
+      FACE_DUPLICATE_THRESHOLD: ${FACE_DUPLICATE_THRESHOLD:-0.40}
+      ACCESS_CONFIDENCE_THRESHOLD: ${ACCESS_CONFIDENCE_THRESHOLD:-0.65}
+      ACCESS_UNKNOWN_FACE_ACTION: ${ACCESS_UNKNOWN_FACE_ACTION:-manual_review}
+      ACCESS_OUTSIDE_SHIFT_ACTION: ${ACCESS_OUTSIDE_SHIFT_ACTION:-manual_review}
+      ACCESS_HOLIDAY_ACTION: ${ACCESS_HOLIDAY_ACTION:-manual_review}
+      ACCESS_SHIFT_GRACE_MINUTES: ${ACCESS_SHIFT_GRACE_MINUTES:-0}
+      ATTENDANCE_DUPLICATE_COOLDOWN_MINUTES: ${ATTENDANCE_DUPLICATE_COOLDOWN_MINUTES:-10}
+      ATTENDANCE_LATE_GRACE_MINUTES: ${ATTENDANCE_LATE_GRACE_MINUTES:-10}
+      ATTENDANCE_AUTO_CHECKOUT_HOURS: ${ATTENDANCE_AUTO_CHECKOUT_HOURS:-12}
+      CAMERA_FRAME_INTERVAL_SECONDS: ${CAMERA_FRAME_INTERVAL_SECONDS:-3}
+      CAMERA_REQUEST_TIMEOUT_SECONDS: ${CAMERA_REQUEST_TIMEOUT_SECONDS:-10}
+      STORAGE_BACKEND: local
+      UPLOAD_DIR: /app/uploads
+      UPLOAD_MAX_IMAGE_MB: ${UPLOAD_MAX_IMAGE_MB:-5}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-false}
+    volumes:
+      - uploads_data:/app/uploads
+      - insightface_cache:/home/visionpass/.insightface
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    networks:
+      - visionpass
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-}
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - visionpass
 
 volumes:
   postgres_data:
+  uploads_data:
+  insightface_cache:
+
+networks:
+  visionpass:
+    driver: bridge

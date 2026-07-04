@@ -1,0 +1,61 @@
+import { loadStoredAccessToken } from "@/services/auth";
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
+
+export type ReportKind = "attendance" | "employees" | "visitors" | "cameras" | "recognition" | "access";
+
+export type ReportFilters = {
+  start_date?: string;
+  end_date?: string;
+  employee_id?: string;
+  department?: string;
+  status?: string;
+  camera_id?: string;
+  event_type?: string;
+};
+
+export type ReportResult = {
+  items: Record<string, unknown>[];
+  total: number;
+};
+
+function apiUrl(path: string) {
+  if (!API_BASE) return path;
+  if (API_BASE.endsWith("/api") && path.startsWith("/api/")) return `${API_BASE}${path.slice(4)}`;
+  return `${API_BASE}${path}`;
+}
+
+export function reportQuery(filters: ReportFilters) {
+  const query = new URLSearchParams();
+  Object.entries(filters).forEach(([key, value]) => {
+    if (value) query.set(key, value);
+  });
+  return query.toString();
+}
+
+export async function fetchReport(kind: ReportKind, filters: ReportFilters): Promise<ReportResult> {
+  const query = reportQuery(filters);
+  const response = await fetch(apiUrl(`/api/reports/${kind}${query ? `?${query}` : ""}`), {
+    headers: { Authorization: `Bearer ${loadStoredAccessToken() ?? ""}` },
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({})) as { detail?: string };
+    throw new Error(payload.detail ?? `Unable to load ${kind} report.`);
+  }
+  return response.json() as Promise<ReportResult>;
+}
+
+export async function downloadReport(kind: "attendance" | "access", filters: ReportFilters) {
+  const query = reportQuery(filters);
+  const response = await fetch(apiUrl(`/api/reports/${kind}/export.csv${query ? `?${query}` : ""}`), {
+    headers: { Authorization: `Bearer ${loadStoredAccessToken() ?? ""}` },
+  });
+  if (!response.ok) throw new Error("Unable to export this report.");
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `${kind}-report.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}

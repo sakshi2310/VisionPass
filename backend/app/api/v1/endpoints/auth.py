@@ -24,6 +24,7 @@ from app.services.auth_service import (
     has_super_admin,
     issue_login_token,
 )
+from app.services.feature_flag_service import list_enabled_member_modules, list_enabled_modules
 
 router = APIRouter()
 logger = get_logger("auth")
@@ -80,11 +81,20 @@ def login(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from exc
 
     access_token = issue_login_token(user)
-    logger.info(f'OK LOGIN SUCCESS -- Admin: "{user.full_name}" (ID: {user.id}) | Role: {build_display_role(user.role)}')
+    role = str(user.role).strip().lower()
+    features = (
+        []
+        if role == "super_admin"
+        else list_enabled_modules(db, user.tenant_id)
+        if role in {"tenant_admin", "client_admin"}
+        else list_enabled_member_modules(db, user.tenant_id, user.id)
+    )
+    logger.info(f'OK LOGIN SUCCESS -- User: "{user.full_name}" (ID: {user.id}) | Role: {build_display_role(user.role)}')
     return AuthResponse(
         token=TokenResponse(access_token=access_token),
         user=UserRead.model_validate(user),
         tenant=tenant,
+        features=features,
     )
 
 

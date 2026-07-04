@@ -20,7 +20,7 @@ export function TenantAdminFeatures() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  usePageTitle("VisionPass AI | Tenant Features");
+  usePageTitle("Vision Pass | Tenant Features");
 
   async function loadFeatures() {
     try {

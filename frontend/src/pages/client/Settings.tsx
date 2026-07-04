@@ -11,7 +11,7 @@ import { usePageTitle } from "@/hooks/usePageTitle";
 
 export function Settings() {
   const { user, changePassword } = useApp();
-  usePageTitle("VisionPass AI | Settings");
+  usePageTitle("Vision Pass | Settings");
   const [passwordForm, setPasswordForm] = useState({
     currentPassword: "",
     newPassword: "",
