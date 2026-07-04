@@ -123,9 +123,8 @@ export function Header({ onMenuClick }: HeaderProps) {
             <button
               type="button"
               onClick={async () => {
-                const role = user?.role;
                 await logout();
-                navigate(role === "SUPER_ADMIN" ? "/admin/login" : "/login", { replace: true });
+                navigate("/login", { replace: true });
               }}
               className="mt-2 w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/5"
             >

@@ -174,7 +174,7 @@ export function TenantDetails() {
             <div className="grid gap-3">
               {[
                 { label: 'Company Name', value: tenant.name },
-                { label: 'Company Email', value: tenant.adminEmail ?? '-' },
+                { label: 'Company Email', value: tenant.companyEmail ?? '-' },
                 { label: 'Phone', value: tenant.phone ?? '-' },
                 { label: 'Address', value: tenant.address ?? '-' },
                 { label: 'Logo URL', value: tenant.logo_url ?? '-' },

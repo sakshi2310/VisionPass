@@ -56,3 +56,14 @@ def test_demo_seed_is_complete_idempotent_and_has_no_fake_embeddings(db):
         "alerts": db.query(Alert).filter(Alert.tenant_id == tenant.id).count(),
     }
     assert second_counts == first_counts
+
+    original_tenant_id = tenant.id
+    tenant.is_deleted = True
+    tenant.status = "inactive"
+    db.commit()
+
+    seed_default_admin(db, include_operational_data=False)
+    restored_tenant = db.query(Tenant).filter(Tenant.slug == "visionpass-demo").one()
+    assert restored_tenant.id == original_tenant_id
+    assert restored_tenant.is_deleted is False
+    assert restored_tenant.status == "active"

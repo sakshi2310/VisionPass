@@ -204,14 +204,27 @@ export type RecognizeAndMarkResponse = {
   attendance?: AttendanceMarkResponse | null;
 };
 
+export type CameraDetectionZone = {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type Camera = {
   id: string;
   tenant_id: string;
   name: string;
   location: string;
-  camera_type: "ip_webcam" | "rtsp" | "webcam" | "manual";
+  camera_type: "ip_webcam" | "phone_ip_webcam" | "rtsp" | "http_mjpeg" | "webcam" | "manual" | "manual_snapshot";
+  phone_ip?: string | null;
+  port?: number | null;
   stream_url?: string | null;
   snapshot_url?: string | null;
+  assigned_feature_scope: "attendance" | "object_detection" | "both";
+  detection_zones: CameraDetectionZone[];
   username?: string | null;
   has_credentials: boolean;
   is_active: boolean;
@@ -225,8 +238,12 @@ export type CameraPayload = {
   name: string;
   location: string;
   camera_type: Camera["camera_type"];
+  phone_ip?: string | null;
+  port?: number | null;
   stream_url?: string | null;
   snapshot_url?: string | null;
+  assigned_feature_scope: Camera["assigned_feature_scope"];
+  detection_zones?: CameraDetectionZone[];
   username?: string | null;
   password?: string | null;
   clear_password?: boolean;

@@ -7,9 +7,10 @@ type RequestInitJson = RequestInit & {
   body?: string;
 };
 
-type AdminTenantPayload = {
+type AdminTenantPayload = {
   full_name: string;
-  email: string;
+  email: string;
+  company_email?: string;
   phone?: string;
   password: string;
   organization_name: string;
@@ -23,8 +24,9 @@ type AdminTenantPayload = {
   enabled_modules: string[];
 };
 
-type AdminTenantUpdatePayload = Partial<{
-  name: string;
+type AdminTenantUpdatePayload = Partial<{
+  name: string;
+  company_email: string;
   slug: string;
   logo_url: string;
   address: string;
@@ -45,14 +47,15 @@ type AdminFeaturePayload = {
   status: string;
 };
 
-type RawAdminTenant = {
+type RawAdminTenant = {
   id: string;
   name: string;
   slug: string;
   code: string;
   plan: string;
   status: string;
-  industry: string;
+  industry: string;
+  company_email: string | null;
   logo_url: string | null;
   address: string | null;
   admin_name: string | null;
@@ -136,7 +139,7 @@ function authHeaders() {
   return token ? { Authorization: 'Bearer ' + token } : {};
 }
 
-function normalizeTenant(raw: RawAdminTenant): AdminTenant {
+function normalizeTenant(raw: RawAdminTenant): AdminTenant {
   return {
     ...raw,
     enabledModules: raw.enabled_modules ?? [],
@@ -145,7 +148,8 @@ function normalizeTenant(raw: RawAdminTenant): AdminTenant {
     maxDevices: raw.max_devices,
     featuresCount: raw.features_count,
     adminName: raw.admin_name ?? undefined,
-    adminEmail: raw.admin_email ?? undefined,
+    adminEmail: raw.admin_email ?? undefined,
+    companyEmail: raw.company_email ?? undefined,
     phone: raw.phone ?? undefined,
     logo_url: raw.logo_url ?? undefined,
     address: raw.address ?? undefined,
@@ -200,13 +204,14 @@ async function requestJson<T>(path: string, init?: RequestInitJson): Promise<T> 
   return (await response.json()) as T;
 }
 
-export type AdminTenant = Tenant & {
+export type AdminTenant = Tenant & {
   slug: string;
   industry: string;
   logo_url?: string;
   address?: string;
   adminName?: string;
-  adminEmail?: string;
+  adminEmail?: string;
+  companyEmail?: string;
   phone?: string;
   maxUsers: number;
   maxDevices: number;

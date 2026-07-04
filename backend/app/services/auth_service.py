@@ -17,6 +17,7 @@ from app.models.tenant_member import TenantMember
 logger = get_logger("auth")
 TENANT_USER_ROLES = {
     "tenant_admin",
+    "client_admin",
     "user",
 }
 
@@ -96,18 +97,15 @@ def _find_super_admin_by_email(db: Session, email: str) -> SuperAdmin | None:
     return db.query(SuperAdmin).filter(SuperAdmin.email == normalized_email).one_or_none()
 
 
-def _find_tenant_member_and_tenant_by_email(db: Session, email: str) -> tuple[TenantMember, Tenant] | None:
+def _find_tenant_members_and_tenants_by_email(db: Session, email: str) -> list[tuple[TenantMember, Tenant]]:
     normalized_email = email.lower().strip()
-    row = (
+    rows = (
         db.query(TenantMember, Tenant)
         .join(Tenant, Tenant.id == TenantMember.tenant_id)
         .filter(TenantMember.email == normalized_email)
-        .one_or_none()
+        .all()
     )
-    if row is None:
-        return None
-    member, tenant = row
-    return member, tenant
+    return [(member, tenant) for member, tenant in rows]
 
 
 def authenticate_super_admin_login(db: Session, email: str, password: str) -> SuperAdmin:
@@ -122,7 +120,18 @@ def authenticate_super_admin_login(db: Session, email: str, password: str) -> Su
     return admin
 
 
-def authenticate_login(db: Session, email: str, password: str) -> tuple[Tenant, TenantMember]:
+def authenticate_login(
+    db: Session,
+    email: str,
+    password: str,
+) -> tuple[Tenant | None, TenantMember | SuperAdmin]:
+    """Authenticate any supported account type from the common login endpoint."""
+    if _find_super_admin_by_email(db, email) is not None:
+        try:
+            return None, authenticate_super_admin_login(db, email, password)
+        except ValueError as exc:
+            if str(exc) != "Invalid credentials":
+                raise
     return authenticate_tenant_member_login(db, email, password)
 
 
@@ -136,24 +145,25 @@ def authenticate_tenant_member_login(
     password: str,
     required_role: str | None = None,
 ) -> tuple[Tenant, TenantMember]:
-    row = _find_tenant_member_and_tenant_by_email(db, email)
-    if row is None:
+    rows = _find_tenant_members_and_tenants_by_email(db, email)
+    if not rows:
         raise ValueError("Invalid credentials")
 
-    user, tenant = row
-    normalized_role = normalize_role(user.role)
-    if required_role is not None and normalized_role != normalize_role(required_role):
-        raise ValueError("Invalid credentials")
-    if normalized_role not in TENANT_USER_ROLES:
-        raise ValueError("Invalid credentials")
+    for user, tenant in rows:
+        normalized_role = normalize_role(user.role)
+        if required_role is not None and normalized_role != normalize_role(required_role):
+            continue
+        if normalized_role not in TENANT_USER_ROLES:
+            continue
+        if not verify_password(password, user.password_hash):
+            continue
 
-    _verify_active_member(user)
-    _ensure_tenant_active(db, tenant.id)
-    if not verify_password(password, user.password_hash):
-        raise ValueError("Invalid credentials")
+        _verify_active_member(user)
+        _ensure_tenant_active(db, tenant.id)
+        _touch_login(user, db)
+        return tenant, user
 
-    _touch_login(user, db)
-    return tenant, user
+    raise ValueError("Invalid credentials")
 
 
 def authenticate_tenant_user_login(db: Session, email: str, password: str) -> tuple[Tenant, TenantMember]:

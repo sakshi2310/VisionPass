@@ -24,11 +24,14 @@ type ApiUser = {
 };
 
 type ApiAuthResponse = {
+  access_token?: string;
+  token_type?: string;
   token: {
     access_token: string;
     token_type: string;
   };
   user: ApiUser;
+  features?: string[];
   tenant?: {
     id: string;
     name: string;
@@ -141,6 +144,7 @@ function normalizeTenant(
       }
     | null
     | undefined,
+  enabledModules: string[] = [],
 ) {
   if (!tenant) return null;
   return {
@@ -150,7 +154,7 @@ function normalizeTenant(
     plan: tenant.plan,
     industry: tenant.industry,
     status: tenant.status as "active" | "trial" | "paused",
-    enabledModules: [],
+    enabledModules,
     users: 0,
     sites: tenant.status === "active" ? 1 : 0,
     alertsToday: 0,
@@ -257,27 +261,12 @@ export async function login(email: string, password: string): Promise<AuthSessio
     body: JSON.stringify({ email, password }),
   });
   const user = normalizeUser(session.user);
-  const tenant = normalizeTenant(session.tenant);
-  saveStoredAccessToken(session.token.access_token);
+  const tenant = normalizeTenant(session.tenant, session.features ?? []);
+  const accessToken = session.access_token ?? session.token.access_token;
+  saveStoredAccessToken(accessToken);
   saveStoredUser(user);
   return {
-    token: session.token.access_token,
-    user,
-    tenant,
-  };
-}
-
-export async function loginSuperAdmin(email: string, password: string): Promise<AuthSession> {
-  const session = await requestJson<ApiAuthResponse>("/api/admin/login", {
-    method: "POST",
-    body: JSON.stringify({ email, password }),
-  });
-  const user = normalizeUser(session.user);
-  const tenant = normalizeTenant(session.tenant);
-  saveStoredAccessToken(session.token.access_token);
-  saveStoredUser(user);
-  return {
-    token: session.token.access_token,
+    token: accessToken,
     user,
     tenant,
   };

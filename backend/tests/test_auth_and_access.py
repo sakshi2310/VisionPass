@@ -50,19 +50,45 @@ def _create_employee(client, headers: dict[str, str], code: str = "EMP-001"):
 
 
 def test_authentication_success_and_failure(client):
-    success = client.post(
-        "/api/tenant/auth/login",
+    tenant_admin = client.post(
+        "/api/auth/login",
         json={
             "email": "tenant.admin@visionpass.test",
             "password": "TenantAdmin@123",
         },
     )
-    assert success.status_code == 200
-    assert success.json()["user"]["role"] == "tenant_admin"
-    assert success.json()["token"]["access_token"]
+    assert tenant_admin.status_code == 200
+    assert tenant_admin.json()["user"]["role"] == "tenant_admin"
+    assert tenant_admin.json()["user"]["tenant_id"]
+    assert tenant_admin.json()["access_token"]
+    assert tenant_admin.json()["access_token"] == tenant_admin.json()["token"]["access_token"]
+    assert tenant_admin.json()["token_type"] == "bearer"
+    assert tenant_admin.json()["features"]
+
+    tenant_user = client.post(
+        "/api/auth/login",
+        json={
+            "email": "normal.user@visionpass.test",
+            "password": "User@123456",
+        },
+    )
+    assert tenant_user.status_code == 200
+    assert tenant_user.json()["user"]["role"] == "user"
+    assert tenant_user.json()["user"]["tenant_id"] == tenant_admin.json()["user"]["tenant_id"]
+    assert tenant_user.json()["access_token"]
+
+    super_admin = client.post(
+        "/api/auth/login",
+        json={"email": "admin@gmail.com", "password": "admin@123"},
+    )
+    assert super_admin.status_code == 200
+    assert super_admin.json()["user"]["role"] == "super_admin"
+    assert super_admin.json()["user"]["tenant_id"] is None
+    assert super_admin.json()["tenant"] is None
+    assert super_admin.json()["access_token"]
 
     failure = client.post(
-        "/api/tenant/auth/login",
+        "/api/auth/login",
         json={
             "email": "tenant.admin@visionpass.test",
             "password": "incorrect-password",

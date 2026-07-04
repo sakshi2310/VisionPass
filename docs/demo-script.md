@@ -24,6 +24,28 @@ docker compose logs -f backend
 
 Open `http://localhost:3000`.
 
+## Seed an existing empty database
+
+The standalone seed command applies all Alembic migrations, then creates the
+complete demo dataset. It is idempotent, so it can be run again safely.
+
+With the Docker stack running:
+
+```sh
+docker compose exec backend python scripts/seed_demo.py --force
+```
+
+For a backend running directly on the host:
+
+```sh
+cd backend
+python scripts/seed_demo.py
+```
+
+The command reads `DATABASE_URL` from the environment or the active `.env`
+file. Use `--no-operational-data` to create only accounts, the tenant, master
+features, and feature assignments.
+
 ## Seeded credentials
 
 These credentials exist only when `SEED_DEMO_DATA=true`.

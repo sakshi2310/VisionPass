@@ -16,6 +16,7 @@ class AdminTenantRead(BaseModel):
     plan: str
     status: str
     industry: str = "General"
+    company_email: str | None = None
     logo_url: str | None = None
     address: str | None = None
     admin_name: str | None = None
@@ -38,6 +39,7 @@ class AdminTenantRead(BaseModel):
 class AdminTenantCreate(BaseModel):
     full_name: str
     email: str
+    company_email: str | None = None
     phone: str | None = None
     password: str
     organization_name: str
@@ -53,6 +55,7 @@ class AdminTenantCreate(BaseModel):
 
 class AdminTenantUpdate(BaseModel):
     name: str | None = None
+    company_email: str | None = None
     slug: str | None = None
     logo_url: str | None = None
     address: str | None = None

@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app.core.logger import get_logger
 from app.models.feature import Feature
+from app.models.member_feature import MemberFeature
 from app.models.tenant_feature import TenantFeature
 
 logger = get_logger("features")
@@ -44,6 +45,7 @@ def seed_default_master_features(db: Session) -> None:
 
 def list_master_features(db: Session, include_deleted: bool = False) -> list[Feature]:
     query = db.query(Feature)
+    query = query.filter(Feature.is_deleted.is_(False))
     if not include_deleted:
         query = query.filter(Feature.status == "active")
     return query.order_by(Feature.created_at.desc()).all()
@@ -52,6 +54,7 @@ def list_master_features(db: Session, include_deleted: bool = False) -> list[Fea
 def list_active_master_features(db: Session) -> list[Feature]:
     return (
         db.query(Feature)
+        .filter(Feature.is_deleted.is_(False))
         .filter(Feature.status == "active")
         .order_by(Feature.created_at.desc())
         .all()
@@ -63,7 +66,11 @@ def list_active_feature_codes(db: Session) -> list[str]:
 
 
 def get_master_feature(db: Session, feature_id: str) -> Feature | None:
-    return db.query(Feature).filter(Feature.id == feature_id).one_or_none()
+    return (
+        db.query(Feature)
+        .filter(Feature.id == feature_id, Feature.is_deleted.is_(False))
+        .one_or_none()
+    )
 
 
 def create_master_feature(
@@ -134,11 +141,16 @@ def delete_master_feature(db: Session, feature_id: str) -> bool:
     if feature is None:
         return False
 
-    logger.warning(f'>>> SOFT DELETE MASTER FEATURE -- Code: {feature.feature_code} | ID: {feature.id}')
+    logger.warning(f'>>> DELETE MASTER FEATURE -- Code: {feature.feature_code} | ID: {feature.id}')
+    db.query(MemberFeature).filter(
+        MemberFeature.feature_code == feature.feature_code
+    ).delete(synchronize_session=False)
+    db.query(TenantFeature).filter(
+        TenantFeature.feature_code == feature.feature_code
+    ).delete(synchronize_session=False)
     feature.status = "inactive"
-    flags = db.query(TenantFeature).filter(TenantFeature.feature_code == feature.feature_code).all()
-    for flag in flags:
-        flag.enabled = False
+    feature.is_deleted = True
+    db.add(feature)
     db.commit()
-    logger.warning(f'WARN MASTER FEATURE DELETED -- ID: {feature.id} | Code: {feature.feature_code}')
+    logger.warning(f'WARN MASTER FEATURE DELETED -- ID: {feature_id}')
     return True

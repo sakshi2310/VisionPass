@@ -30,7 +30,7 @@ from app.services.camera_service import (
 )
 from app.services.face_ai_service import FaceModelUnavailableError, FaceValidationError
 
-router = APIRouter(dependencies=[Depends(require_module("attendance"))])
+router = APIRouter()
 
 
 def _camera_read(camera) -> CameraRead:
@@ -217,6 +217,7 @@ def process_frame(
     camera_id: str,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
+    _attendance_access=Depends(require_module("attendance")),
 ) -> CameraFrameResponse:
     return _run_frame_action(
         db,
@@ -231,6 +232,7 @@ def recognize_frame(
     camera_id: str,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
+    _attendance_access=Depends(require_module("attendance")),
 ) -> CameraFrameResponse:
     return _run_frame_action(
         db,
@@ -245,6 +247,7 @@ def recognize_and_mark_camera_attendance(
     camera_id: str,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
+    _attendance_access=Depends(require_module("attendance")),
 ) -> CameraFrameResponse:
     return _run_frame_action(
         db,

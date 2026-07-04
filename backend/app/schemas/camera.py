@@ -11,7 +11,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from app.schemas.attendance import AttendanceMarkResponse
 from app.schemas.recognition import RecognitionResponse
 
-CameraType = Literal["ip_webcam", "rtsp", "webcam", "manual"]
+CameraType = Literal[
+    "ip_webcam", "phone_ip_webcam", "rtsp", "http_mjpeg",
+    "webcam", "manual", "manual_snapshot",
+]
+CameraFeatureScope = Literal["attendance", "object_detection", "both"]
 CameraHealth = Literal["online", "offline", "error", "unknown"]
 
 
@@ -27,12 +31,25 @@ def _validate_url(value: str | None) -> str | None:
     return normalized
 
 
+class CameraDetectionZone(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    x: float = Field(ge=0, le=100)
+    y: float = Field(ge=0, le=100)
+    width: float = Field(gt=0, le=100)
+    height: float = Field(gt=0, le=100)
+
+
 class CameraCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     location: str = Field(min_length=1, max_length=255)
     camera_type: CameraType
+    phone_ip: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
     stream_url: str | None = None
     snapshot_url: str | None = None
+    assigned_feature_scope: CameraFeatureScope = "both"
+    detection_zones: list[CameraDetectionZone] = Field(default_factory=list)
     username: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, max_length=500)
     is_active: bool = True
@@ -45,8 +62,12 @@ class CameraUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=255)
     location: str | None = Field(default=None, min_length=1, max_length=255)
     camera_type: CameraType | None = None
+    phone_ip: str | None = Field(default=None, max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
     stream_url: str | None = None
     snapshot_url: str | None = None
+    assigned_feature_scope: CameraFeatureScope | None = None
+    detection_zones: list[CameraDetectionZone] | None = None
     username: str | None = Field(default=None, max_length=255)
     password: str | None = Field(default=None, max_length=500)
     clear_password: bool = False
@@ -62,8 +83,12 @@ class CameraRead(BaseModel):
     name: str
     location: str
     camera_type: CameraType
+    phone_ip: str | None = None
+    port: int | None = None
     stream_url: str | None = None
     snapshot_url: str | None = None
+    assigned_feature_scope: CameraFeatureScope = "both"
+    detection_zones: list[CameraDetectionZone] = Field(default_factory=list)
     username: str | None = None
     has_credentials: bool = False
     is_active: bool

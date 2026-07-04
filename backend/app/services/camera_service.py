@@ -52,14 +52,20 @@ def _validate_configuration(
     stream_url: str | None,
     snapshot_url: str | None,
 ) -> None:
-    if camera_type == "ip_webcam" and not snapshot_url:
-        raise CameraError("SNAPSHOT_URL_REQUIRED", "IP Webcam cameras require a snapshot URL.")
+    if camera_type in {"ip_webcam", "phone_ip_webcam"} and not snapshot_url:
+        raise CameraError("SNAPSHOT_URL_REQUIRED", "Phone IP Webcam cameras require a snapshot URL.")
     if camera_type == "rtsp" and not stream_url:
         raise CameraError("STREAM_URL_REQUIRED", "RTSP cameras require a stream URL.")
+    if camera_type == "http_mjpeg" and not stream_url:
+        raise CameraError("STREAM_URL_REQUIRED", "HTTP MJPEG cameras require a stream URL.")
+    if camera_type == "manual_snapshot" and not snapshot_url:
+        raise CameraError("SNAPSHOT_URL_REQUIRED", "Manual snapshot cameras require a snapshot URL.")
     if snapshot_url and urlparse(snapshot_url).scheme.lower() not in {"http", "https"}:
         raise CameraError("INVALID_SNAPSHOT_URL", "Snapshot URL must use HTTP or HTTPS.")
     if camera_type == "rtsp" and stream_url and urlparse(stream_url).scheme.lower() not in {"rtsp", "rtsps"}:
         raise CameraError("INVALID_STREAM_URL", "RTSP stream URL must use RTSP or RTSPS.")
+    if camera_type in {"ip_webcam", "phone_ip_webcam", "http_mjpeg"} and stream_url and urlparse(stream_url).scheme.lower() not in {"http", "https"}:
+        raise CameraError("INVALID_STREAM_URL", "Phone and MJPEG stream URLs must use HTTP or HTTPS.")
 
 
 def camera_to_dict(camera: Camera) -> dict:
@@ -69,8 +75,12 @@ def camera_to_dict(camera: Camera) -> dict:
         "name": camera.name,
         "location": camera.location,
         "camera_type": camera.camera_type,
+        "phone_ip": camera.phone_ip,
+        "port": camera.port,
         "stream_url": camera.stream_url,
         "snapshot_url": camera.snapshot_url,
+        "assigned_feature_scope": camera.assigned_feature_scope,
+        "detection_zones": camera.detection_zones or [],
         "username": camera.username,
         "has_credentials": bool(camera.username or camera.password_encrypted),
         "is_active": camera.is_active,
@@ -110,6 +120,10 @@ def create_camera(
     username: str | None,
     password: str | None,
     is_active: bool,
+    phone_ip: str | None = None,
+    port: int | None = None,
+    assigned_feature_scope: str = "both",
+    detection_zones: list[dict] | None = None,
 ) -> Camera:
     normalized_name = name.strip()
     normalized_location = location.strip()
@@ -123,6 +137,10 @@ def create_camera(
         name=normalized_name,
         location=normalized_location,
         camera_type=camera_type,
+        phone_ip=_clean(phone_ip),
+        port=port,
+        assigned_feature_scope=assigned_feature_scope,
+        detection_zones=detection_zones or [],
         stream_url=stream_url,
         snapshot_url=snapshot_url,
         username=_clean(username),
@@ -154,7 +172,17 @@ def update_camera(db: Session, tenant_id: str, camera_id: str, changes: dict) ->
             if not isinstance(value, str) or not value.strip():
                 raise CameraError("INVALID_CAMERA", "Camera name and location are required.")
 
-    for field in ("name", "location", "camera_type", "username", "is_active"):
+    for field in (
+        "name",
+        "location",
+        "camera_type",
+        "phone_ip",
+        "port",
+        "assigned_feature_scope",
+        "detection_zones",
+        "username",
+        "is_active",
+    ):
         if field in changes:
             value = changes[field]
             if field == "username":

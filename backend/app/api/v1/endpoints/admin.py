@@ -68,6 +68,7 @@ def create_tenant(
         db=db,
         full_name=payload.full_name,
         email=payload.email,
+        company_email=payload.company_email,
         phone=payload.phone,
         password=payload.password,
         organization_name=payload.organization_name,
@@ -167,6 +168,7 @@ def patch_tenant(
         db=db,
         tenant_id=tenant_id,
         name=payload.name,
+        company_email=payload.company_email,
         slug=payload.slug,
         logo_url=payload.logo_url,
         address=payload.address,
@@ -197,7 +199,12 @@ def get_features(
     db: Session = Depends(database_session),
     _=Depends(require_role(["SUPER_ADMIN"])),
 ) -> CvFeatureListResponse:
-    return CvFeatureListResponse(features=[CvFeatureRead.model_validate(feature) for feature in list_master_features(db)])
+    return CvFeatureListResponse(
+        features=[
+            CvFeatureRead.model_validate(feature)
+            for feature in list_master_features(db, include_deleted=True)
+        ]
+    )
 
 
 @router.post("/features", response_model=CvFeatureRead, status_code=status.HTTP_201_CREATED)

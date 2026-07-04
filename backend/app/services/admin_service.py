@@ -48,7 +48,9 @@ def _tenant_payload(db: Session, tenant: Tenant) -> dict:
         "code": build_tenant_code(tenant.slug),
         "plan": tenant.plan,
         "status": tenant.status,
-        "industry": tenant.industry,
+        "industry": tenant.industry,
+
+        "company_email": tenant.company_email or (None if admin is None else admin.email),
         "logo_url": tenant.logo_url,
         "address": tenant.address,
         "admin_name": None if admin is None else admin.full_name,
@@ -144,7 +146,9 @@ def get_admin_tenant_details(db: Session, tenant_id: str) -> dict | None:
 def create_admin_tenant(
     db: Session,
     full_name: str,
-    email: str,
+    email: str,
+
+    company_email: str | None,
     phone: str | None,
     password: str,
     organization_name: str,
@@ -167,7 +171,9 @@ def create_admin_tenant(
         plan="basic",
         industry=industry,
         max_users=max_users,
-        max_devices=max_devices,
+        max_devices=max_devices,
+
+        company_email=company_email or email,
         logo_url=logo_url,
         address=address,
     )
@@ -195,7 +201,9 @@ def update_admin_tenant(
     db: Session,
     tenant_id: str,
     *,
-    name: str | None = None,
+    name: str | None = None,
+
+    company_email: str | None = None,
     slug: str | None = None,
     logo_url: str | None = None,
     address: str | None = None,
@@ -217,7 +225,11 @@ def update_admin_tenant(
 
     if name is not None:
         tenant.name = name
-    if slug is not None:
+    if company_email is not None:
+
+        tenant.company_email = company_email.lower().strip() or None
+
+    if slug is not None:
         tenant.slug = slug
     if logo_url is not None:
         tenant.logo_url = logo_url

@@ -46,7 +46,8 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
 }
 
 export function ClientAdminDashboard() {
-  const { currentTenant } = useApp();
+  const { currentTenant, hasModule } = useApp();
+  const noProductModules = !hasModule("attendance") && !hasModule("object_detection");
   const [summary, setSummary] = useState<DashboardSummary>(initialSummary);
   const [activity, setActivity] = useState<DashboardRecentActivity | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,7 +113,13 @@ export function ClientAdminDashboard() {
         </div>
       </section>
 
-      {error ? (
+      {noProductModules ? (
+        <EmptyState
+          title="No product modules enabled"
+          description="Common camera, report, member, and settings tools remain available. Ask your Super Admin to enable Attendance or Object Detection."
+          action={<Camera className="h-7 w-7 text-slate-400" />}
+        />
+      ) : error ? (
         <EmptyState
           title="Dashboard unavailable"
           description={error}

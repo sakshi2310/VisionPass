@@ -3,6 +3,7 @@ import type { ReactElement } from "react";
 
 import { useApp } from "@/context/AppContext";
 import type { ModuleKey, Role } from "@/types";
+import { dashboardPathForRole } from "@/utils/authRouting";
 
 type ProtectedRouteProps = {
   allowedRoles?: Role[];
@@ -12,17 +13,6 @@ type ProtectedRouteProps = {
 
 function isSuperAdmin(role: Role) {
   return role === "SUPER_ADMIN";
-}
-
-function loginPathForRoles(allowedRoles?: Role[]) {
-  if (allowedRoles?.length === 1 && allowedRoles[0] === "SUPER_ADMIN") return "/admin/login";
-  return "/login";
-}
-
-function redirectForRole(role: Role) {
-  if (isSuperAdmin(role)) return "/admin/login";
-  if (role === "CLIENT_ADMIN") return "/client-admin/dashboard";
-  return "/login";
 }
 
 function accessDeniedMessage(allowedRoles?: Role[], requiredModule?: ModuleKey) {
@@ -55,15 +45,25 @@ export function ProtectedRoute({ allowedRoles, requiredModule, children }: Prote
   }
 
   if (!user) {
-    return <Navigate to={loginPathForRoles(allowedRoles)} replace state={{ message: accessDeniedMessage(allowedRoles, requiredModule) }} />;
+    return <Navigate to="/login" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(user.role)) {
-    return <Navigate to={redirectForRole(user.role)} replace state={{ message: accessDeniedMessage(allowedRoles, requiredModule) }} />;
+    return <Navigate to={dashboardPathForRole(user.role)} replace state={{ message: accessDeniedMessage(allowedRoles, requiredModule) }} />;
   }
 
   if (requiredModule && !isSuperAdmin(user.role) && !hasModule(requiredModule)) {
-    return <Navigate to={redirectForRole(user.role)} replace state={{ message: accessDeniedMessage(allowedRoles, requiredModule) }} />;
+    return (
+      <div className="grid min-h-[60vh] place-items-center px-4">
+        <div className="max-w-md rounded-3xl border border-rose-200 bg-white p-8 text-center shadow-soft dark:border-rose-500/20 dark:bg-white/5">
+          <div className="text-sm font-semibold uppercase tracking-[0.24em] text-rose-500">403 · Not Authorized</div>
+          <h1 className="mt-3 text-2xl font-semibold">Module not enabled</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            This feature is not enabled for your tenant. Ask your Super Admin to enable it.
+          </p>
+        </div>
+      </div>
+    );
   }
 
   return children ?? <Outlet />;

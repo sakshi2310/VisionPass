@@ -34,6 +34,12 @@ docker compose ps
 Open `http://localhost:3000`. Seeded demo credentials and the complete
 presentation checklist are in [docs/demo-script.md](docs/demo-script.md).
 
+To populate an already-running empty database explicitly:
+
+```sh
+docker compose exec backend python scripts/seed_demo.py --force
+```
+
 Backend environment variables and their safe development defaults are documented
 in `backend/.env.example`. Copy that file to `backend/.env` when running the API
 from the backend directory; every listed setting is optional at startup.

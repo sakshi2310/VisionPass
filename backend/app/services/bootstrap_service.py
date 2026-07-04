@@ -17,7 +17,7 @@ from app.models.tenant_feature import TenantFeature
 from app.models.tenant_member import TenantMember
 from app.models.member_feature import MemberFeature
 from app.models.visitor import Visitor, VisitorVisit
-from app.services.cv_feature_service import seed_default_master_features
+from app.services.cv_feature_service import list_active_feature_codes, seed_default_master_features
 from app.services.feature_flag_service import set_member_modules, set_tenant_modules
 from app.services.tenant_service import create_tenant
 
@@ -25,6 +25,7 @@ DEMO_SUPER_ADMIN_EMAIL = "admin@gmail.com"
 DEMO_SUPER_ADMIN_PASSWORD = "admin@123"
 DEMO_TENANT_SLUG = "visionpass-demo"
 DEMO_TENANT_NAME = "VisionPass Demo Tenant"
+DEMO_TENANT_EMAIL = "contact@visionpass.test"
 DEMO_TENANT_ADMIN_EMAIL = "tenant.admin@visionpass.test"
 DEMO_TENANT_ADMIN_PASSWORD = "TenantAdmin@123"
 DEMO_TENANT_USER_EMAIL = "normal.user@visionpass.test"
@@ -59,8 +60,17 @@ def _upsert_super_admin(db: Session) -> SuperAdmin:
 
 
 def _upsert_demo_tenant(db: Session) -> Tenant:
-    tenant = db.query(Tenant).filter(Tenant.slug == DEMO_TENANT_SLUG, Tenant.is_deleted.is_(False)).one_or_none()
+    tenant = db.query(Tenant).filter(Tenant.slug == DEMO_TENANT_SLUG).one_or_none()
     if tenant is not None:
+        tenant.name = DEMO_TENANT_NAME
+        tenant.company_email = DEMO_TENANT_EMAIL
+        tenant.status = "active"
+        tenant.is_deleted = False
+        tenant.industry = "Security"
+        tenant.address = "Demo Campus"
+        db.add(tenant)
+        db.commit()
+        db.refresh(tenant)
         return tenant
 
     tenant = create_tenant(
@@ -70,6 +80,7 @@ def _upsert_demo_tenant(db: Session) -> Tenant:
         status="active",
         plan="basic",
         industry="Security",
+        company_email=DEMO_TENANT_EMAIL,
         max_users=100,
         max_devices=20,
         address="Demo Campus",
@@ -514,8 +525,11 @@ def seed_default_admin(db: Session, *, include_operational_data: bool = True) ->
         role="user",
     )
 
-    set_tenant_modules(db, tenant.id, DEMO_FEATURE_CODES, updated_by=tenant_admin.id)
-    set_member_modules(db, tenant.id, tenant_admin.id, DEMO_FEATURE_CODES, updated_by=tenant_admin.id)
-    set_member_modules(db, tenant.id, tenant_user.id, DEMO_USER_FEATURE_CODES, updated_by=tenant_admin.id)
+    active_feature_codes = set(list_active_feature_codes(db))
+    tenant_feature_codes = [code for code in DEMO_FEATURE_CODES if code in active_feature_codes]
+    user_feature_codes = [code for code in DEMO_USER_FEATURE_CODES if code in active_feature_codes]
+    set_tenant_modules(db, tenant.id, tenant_feature_codes, updated_by=tenant_admin.id)
+    set_member_modules(db, tenant.id, tenant_admin.id, tenant_feature_codes, updated_by=tenant_admin.id)
+    set_member_modules(db, tenant.id, tenant_user.id, user_feature_codes, updated_by=tenant_admin.id)
     if include_operational_data:
         _seed_demo_operations(db, tenant)

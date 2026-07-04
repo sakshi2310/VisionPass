@@ -17,8 +17,12 @@ class Camera(Base):
         Index("ix_cameras_tenant_id", "tenant_id"),
         Index("ix_cameras_tenant_active", "tenant_id", "is_active"),
         CheckConstraint(
-            "camera_type IN ('ip_webcam', 'rtsp', 'webcam', 'manual')",
+            "camera_type IN ('ip_webcam', 'phone_ip_webcam', 'rtsp', 'http_mjpeg', 'webcam', 'manual', 'manual_snapshot')",
             name="ck_cameras_type",
+        ),
+        CheckConstraint(
+            "assigned_feature_scope IN ('attendance', 'object_detection', 'both')",
+            name="ck_cameras_feature_scope",
         ),
         CheckConstraint(
             "health_status IN ('online', 'offline', 'error', 'unknown')",
@@ -35,8 +39,14 @@ class Camera(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     location: Mapped[str] = mapped_column(String(255), nullable=False)
     camera_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    phone_ip: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int | None] = mapped_column(nullable=True)
     stream_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     snapshot_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assigned_feature_scope: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="both", server_default=text("'both'")
+    )
+    detection_zones: Mapped[list] = mapped_column(JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb"))
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     password_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
