@@ -16,6 +16,7 @@ from app.schemas.auth import (
     TokenResponse,
 )
 from app.schemas.user import UserRead
+from app.models.tenant import Tenant
 from app.services.auth_service import (
     authenticate_login,
     bootstrap_super_admin,
@@ -103,9 +104,36 @@ def signup() -> dict[str, str]:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Public signup is disabled.")
 
 
+def _features_for_user(db: Session, user) -> list[str]:
+    role = str(user.role).strip().lower()
+    if role == "super_admin":
+        return []
+    if role in {"tenant_admin", "client_admin"}:
+        return list_enabled_modules(db, user.tenant_id)
+    return list_enabled_member_modules(db, user.tenant_id, user.id)
+
+
 @router.get("/me", response_model=UserRead)
 def me(current_user = Depends(get_current_user)) -> UserRead:
     return UserRead.model_validate(current_user)
+
+
+@router.get("/session", response_model=AuthResponse)
+def session(
+    db: Session = Depends(database_session),
+    current_user = Depends(get_current_user),
+) -> AuthResponse:
+    tenant = None
+    if str(current_user.role).strip().lower() != "super_admin":
+        tenant = getattr(current_user, "tenant", None)
+        if tenant is None:
+            tenant = db.query(Tenant).filter_by(id=current_user.tenant_id).one_or_none()
+    return AuthResponse(
+        token=TokenResponse(access_token=""),
+        user=UserRead.model_validate(current_user),
+        tenant=tenant,
+        features=_features_for_user(db, current_user),
+    )
 
 
 @router.post("/change-password", response_model=UserRead)

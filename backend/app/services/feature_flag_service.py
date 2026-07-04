@@ -16,6 +16,7 @@ logger = get_logger("features")
 
 DEFAULT_MODULES = (
     "attendance",
+    "object_detection",
     "visitor_management",
 )
 

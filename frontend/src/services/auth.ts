@@ -141,6 +141,9 @@ function normalizeTenant(
         industry: string;
         plan: string;
         status: string;
+        company_email?: string | null;
+        logo_url?: string | null;
+        address?: string | null;
       }
     | null
     | undefined,
@@ -159,6 +162,9 @@ function normalizeTenant(
     sites: tenant.status === "active" ? 1 : 0,
     alertsToday: 0,
     cameras: 0,
+    companyEmail: tenant.company_email ?? undefined,
+    logo_url: tenant.logo_url ?? undefined,
+    address: tenant.address ?? undefined,
   };
 }
 
@@ -364,19 +370,29 @@ export async function logout() {
   clearSession();
 }
 
-export async function getCurrentUser(): Promise<User | null> {
+export async function getCurrentSession(): Promise<AuthSession | null> {
   const token = loadStoredAccessToken();
   if (!token) return null;
 
   try {
-    const user = await requestJson<ApiUser>("/api/auth/me", {
+    const session = await requestJson<ApiAuthResponse>("/api/auth/session", {
       headers: authHeaders(token),
     });
-    const normalized = normalizeUser(user);
-    saveStoredUser(normalized);
-    return normalized;
+    const user = normalizeUser(session.user);
+    const tenant = normalizeTenant(session.tenant, session.features ?? []);
+    saveStoredUser(user);
+    return {
+      token,
+      user,
+      tenant,
+    };
   } catch {
     clearSession();
     return null;
   }
+}
+
+export async function getCurrentUser(): Promise<User | null> {
+  const session = await getCurrentSession();
+  return session?.user ?? null;
 }

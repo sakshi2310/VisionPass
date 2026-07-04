@@ -1,4 +1,4 @@
-﻿import type { ModuleDefinition, NavItem } from "@/types";
+import type { ModuleDefinition, NavItem } from "@/types";
 
 export const moduleDefinitions: ModuleDefinition[] = [
   {
@@ -9,10 +9,10 @@ export const moduleDefinitions: ModuleDefinition[] = [
     icon: "CalendarCheck2",
   },
   {
-    key: "visitor_classification",
-    label: "Visitors",
-    description: "Unknown and staff classification logs.",
-    route: "/dashboard/visitors",
+    key: "object_detection",
+    label: "Object Detection",
+    description: "Detect configured objects in live video.",
+    route: "/client-admin/object-detection",
     icon: "ScanFace",
   },
 ];
@@ -78,23 +78,13 @@ export const clientNavItems: NavItem[] = [
 
 export const tenantAdminNavItems: NavItem[] = [
   { key: "tenant-dashboard", label: "Dashboard", path: "/tenant-admin/dashboard", icon: "LayoutDashboard" },
+  { key: "tenant-cameras-direct", label: "Camera Management", path: "/client-admin/cameras", icon: "DoorOpen" },
   attendanceNavGroup,
   objectDetectionNavGroup,
   { key: "tenant-visitors", label: "Visitors", path: "/client-admin/visitors", icon: "Users", moduleKey: "visitor_management" },
   { key: "tenant-access", label: "Access Logs", path: "/client-admin/access-control", icon: "ShieldCheck", moduleKey: "access_control" },
   { key: "tenant-alerts", label: "Alerts", path: "/client-admin/alerts", icon: "ClipboardList", moduleKey: "alerts" },
   { key: "tenant-reports", label: "Reports Overview", path: "/client-admin/reports", icon: "ChartColumnIncreasing" },
-  {
-    key: "tenant-cameras",
-    label: "Camera Management",
-    path: "/client-admin/cameras",
-    icon: "DoorOpen",
-    moduleKey: "camera_management",
-    children: [
-      { key: "tenant-camera-management", label: "Camera Management", path: "/client-admin/cameras", icon: "DoorOpen" },
-      { key: "tenant-live-recognition", label: "Live Recognition", path: "/client-admin/cameras/live", icon: "ScanFace" },
-    ],
-  },
   { key: "tenant-members", label: "Members", path: "/tenant-admin/members", icon: "Users" },
   { key: "tenant-features", label: "Features", path: "/tenant-admin/features", icon: "Sparkles" },
   { key: "tenant-settings", label: "Settings", path: "/tenant-admin/settings", icon: "Settings2" },

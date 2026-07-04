@@ -11,7 +11,7 @@ import {
   clearSession,
   changePassword as changePasswordRequest,
   checkBootstrapStatus,
-  getCurrentUser,
+  getCurrentSession,
   loadStoredAccessToken,
   loadStoredTenantId,
   loadStoredTenants,
@@ -121,14 +121,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const currentUser = await getCurrentUser();
+      const currentSession = await getCurrentSession();
       if (cancelled) return;
 
+      const currentUser = currentSession?.user ?? null;
       setUser(currentUser);
       if (currentUser) {
         setCurrentTenantIdState(currentUser.tenantId || "");
         if (currentUser.role === "SUPER_ADMIN") {
           await loadAdminTenants();
+        } else if (currentSession?.tenant) {
+          setTenants((current) => {
+            const nextTenant = currentSession.tenant as Tenant;
+            const filtered = current.filter((tenant) => tenant.id !== nextTenant.id);
+            return [nextTenant, ...filtered];
+          });
+          setCurrentTenantIdState(currentSession.tenant.id);
         }
       }
       setAuthReady(true);
@@ -304,6 +312,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
       },
       hasModule: (moduleKey) => {
+        const commonModules = new Set(["camera_management", "live_feed", "reports"]);
+        if (commonModules.has(moduleKey)) return true;
         if (!currentTenant) return false;
         if (user?.role === "TENANT_USER") {
           return userModuleKeys.includes(moduleKey);
