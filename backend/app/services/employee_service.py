@@ -1,10 +1,11 @@
-﻿"""Employee and face enrollment service helpers."""
+"""Employee and face enrollment service helpers."""
 
 from __future__ import annotations
 
 import base64
 from datetime import datetime, timezone
 from statistics import mean
+from uuid import uuid4
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
@@ -162,11 +163,24 @@ def get_employee(db: Session, tenant_id: str, employee_id: str) -> AttendanceEmp
     return _ensure_employee(db, tenant_id, employee_id)
 
 
+def _generate_employee_code(db: Session, tenant_id: str) -> str:
+    for _ in range(10):
+        code = f"EMP-{uuid4().hex[:8].upper()}"
+        exists = (
+            db.query(AttendanceEmployee.id)
+            .filter(AttendanceEmployee.tenant_id == tenant_id, AttendanceEmployee.employee_code == code)
+            .first()
+        )
+        if exists is None:
+            return code
+    raise ValueError("Unable to generate a unique employee ID")
+
+
 def create_employee(
     db: Session,
     tenant_id: str,
     *,
-    employee_code: str,
+    employee_code: str | None = None,
     full_name: str,
     email: str,
     mobile: str | None = None,
@@ -179,7 +193,7 @@ def create_employee(
     employee_type: str = "Full Time",
     is_active: bool = True,
 ) -> AttendanceEmployee:
-    normalized_code = employee_code.strip()
+    normalized_code = (employee_code or "").strip() or _generate_employee_code(db, tenant_id)
     normalized_name = full_name.strip()
     normalized_email = email.lower().strip()
     if not normalized_code:

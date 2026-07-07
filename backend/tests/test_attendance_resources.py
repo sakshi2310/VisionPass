@@ -161,3 +161,17 @@ def test_employee_crud(client, tenant_admin_headers):
         ).status_code
         == 404
     )
+
+
+def test_employee_code_is_generated_when_omitted(client, tenant_admin_headers):
+    created = client.post(
+        f"{BASE}/employees",
+        headers=tenant_admin_headers,
+        json={
+            "full_name": "Generated Code Employee",
+            "email": "generated-code@example.test",
+        },
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["employee_code"].startswith("EMP-")

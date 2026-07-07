@@ -38,7 +38,7 @@ class EmployeeListResponse(BaseModel):
 
 
 class EmployeeCreate(EmployeeBase):
-    pass
+    employee_code: str | None = None
 
 
 class EmployeeUpdate(BaseModel):

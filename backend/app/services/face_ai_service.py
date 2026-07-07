@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from functools import lru_cache
+import logging
 from typing import Any
 
 from app.core.config import settings
@@ -14,6 +15,7 @@ LOW_FACE_CONFIDENCE = "LOW_FACE_CONFIDENCE"
 LOW_IMAGE_QUALITY = "LOW_IMAGE_QUALITY"
 INVALID_IMAGE = "INVALID_IMAGE"
 DUPLICATE_FACE_DETECTED = "DUPLICATE_FACE_DETECTED"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -74,15 +76,15 @@ def _get_face_analyzer():
 
         analyzer = FaceAnalysis(
             name=settings.face_model_name,
+            allowed_modules=["detection", "recognition"],
             providers=["CPUExecutionProvider"],
         )
-        # Detect at a permissive floor, then enforce the configured confidence
-        # ourselves so low-confidence faces return a precise API error.
-        analyzer.prepare(ctx_id=-1, det_thresh=0.01, det_size=(640, 640))
+        analyzer.prepare(ctx_id=-1, det_thresh=settings.face_detection_confidence, det_size=(320, 320))
         return analyzer
     except Exception as exc:  # pragma: no cover - depends on local model/runtime
+        logger.exception("Unable to initialize InsightFace model '%s'", settings.face_model_name)
         raise FaceModelUnavailableError(
-            f"Unable to initialize InsightFace model '{settings.face_model_name}'."
+            "Face recognition is still preparing. Please wait a few minutes and try the photos again."
         ) from exc
 
 
