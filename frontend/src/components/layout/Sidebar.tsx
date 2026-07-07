@@ -213,6 +213,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
                           <NavLink
                             key={child.key}
                             to={child.path}
+                            end={child.path === item.path}
                             onClick={onClose}
                             className={({ isActive }) =>
                               cn(

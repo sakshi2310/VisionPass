@@ -1,4 +1,4 @@
-﻿import { loadStoredAccessToken } from "@/services/auth";
+import { loadStoredAccessToken } from "@/services/auth";
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 
@@ -288,7 +288,7 @@ export type CameraFrameResult = {
 };
 
 export type EmployeePayload = {
-  employee_code: string;
+  employee_code?: string;
   full_name: string;
   email: string;
   mobile?: string | null;

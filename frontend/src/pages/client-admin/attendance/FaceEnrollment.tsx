@@ -1,6 +1,6 @@
-﻿import { Camera, Loader2, RefreshCw, ScanFace, Upload } from "lucide-react";
+import { Camera, Loader2, RefreshCw, ScanFace, Upload } from "lucide-react";
 import { ChangeEvent, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -73,7 +73,9 @@ async function loadImageMeta(file: File): Promise<DraftImage> {
 }
 
 export function FaceEnrollmentPage() {
-  const { currentTenant } = useApp();
+  const { currentTenant, user } = useApp();
+  const navigate = useNavigate();
+  const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
   const [searchParams, setSearchParams] = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [summary, setSummary] = useState<{ total_employees: number; enrolled_employees: number; in_progress_employees: number; failed_employees: number; total_images: number; total_embeddings: number } | null>(null);
@@ -187,6 +189,9 @@ export function FaceEnrollmentPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={() => navigate(`${adminBasePath}/attendance/employees`)} disabled={saving}>
+              Back to employees
+            </Button>
             <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => window.location.reload()} disabled={saving}>
               Refresh
             </Button>

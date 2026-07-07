@@ -17,6 +17,7 @@ documents the production Compose values.
 | `FRONTEND_URL` | unset | Public frontend URL |
 | `SEED_DEMO_DATA` | `true` | Seed demo identities/data; set false in production |
 | `FACE_MODEL_NAME` | `buffalo_l` | InsightFace model |
+| `PRELOAD_FACE_MODEL` | `true` | Download and validate the model before the API starts |
 | `FACE_DETECTION_CONFIDENCE` | `0.60` | Detection threshold |
 | `FACE_RECOGNITION_THRESHOLD` | `0.45` | Match threshold |
 | `FACE_ENROLLMENT_MIN_QUALITY` | `0.70` | Enrollment quality threshold |

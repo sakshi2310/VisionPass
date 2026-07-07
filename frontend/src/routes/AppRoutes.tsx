@@ -100,10 +100,11 @@ export function AppRoutes() {
                 <Route path="/tenant-admin/attendance/live" element={<LiveAttendancePage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>
-                <Route path="/tenant-admin/object-detection/zones" element={<CameraZoneViewPage />} />
+                <Route path="/tenant-admin/object-detection/zones" element={<Navigate to="/tenant-admin/cameras/zones" replace />} />
                 <Route path="/tenant-admin/object-detection/*" element={<ObjectDetectionPage />} />
               </Route>
               <Route path="/tenant-admin/cameras" element={<CamerasPage />} />
+              <Route path="/tenant-admin/cameras/zones" element={<CameraZoneViewPage />} />
               <Route element={<ProtectedRoute requiredModule="attendance" />}>
                 <Route path="/tenant-admin/cameras/live" element={<LiveRecognitionPage />} />
               </Route>
@@ -136,10 +137,11 @@ export function AppRoutes() {
                 <Route path="/client-admin/attendance/live" element={<LiveAttendancePage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>
-                <Route path="/client-admin/object-detection/zones" element={<CameraZoneViewPage />} />
+                <Route path="/client-admin/object-detection/zones" element={<Navigate to="/client-admin/cameras/zones" replace />} />
                 <Route path="/client-admin/object-detection/*" element={<ObjectDetectionPage />} />
               </Route>
               <Route path="/client-admin/cameras" element={<CamerasPage />} />
+              <Route path="/client-admin/cameras/zones" element={<CameraZoneViewPage />} />
               <Route element={<ProtectedRoute requiredModule="attendance" />}>
                 <Route path="/client-admin/cameras/live" element={<LiveRecognitionPage />} />
               </Route>

@@ -128,8 +128,7 @@ features are enabled.
 - Face enrollment currently stores accepted face images as data URLs in
   PostgreSQL; MinIO/S3 object storage is not implemented. The upload volume is
   available for visitor and future local-file storage.
-- InsightFace downloads the configured model on first use, so that first
-  recognition/enrollment request is slower and requires outbound network access.
+- With `PRELOAD_FACE_MODEL=true`, the backend downloads and validates the configured model before serving API requests. The first backend start is slower and requires outbound network access.
 - Alembic runs in each backend container at startup. Use a one-off migration job
   before scaling the backend to multiple replicas.
 - Camera URLs must be reachable from the backend container's Docker network;
@@ -140,9 +139,7 @@ features are enabled.
 ## Local face enrollment
 
 Face enrollment uses InsightFace `buffalo_l` with ONNX Runtime on the server.
-The model is loaded lazily on the first enrollment request; InsightFace downloads
-the model into the current user's `.insightface` cache if it is not already
-installed. Uploaded files are decoded and checked for exactly one face,
+Docker startup downloads and validates the model before the API becomes ready, then keeps it in the persistent `vision-pass_insightface_cache` volume. Uploaded files are decoded and checked for exactly one face,
 detection confidence, resolution, sharpness, brightness, face size, and overall
 quality before a real 512-dimensional embedding is saved.
 Embeddings are L2-normalized before pgvector storage. Enrollment also compares
@@ -191,8 +188,7 @@ cd backend
 
 On Windows, the PyPI InsightFace package builds a small native extension and
 requires Microsoft C++ Build Tools 14 or newer. Linux environments need a C/C++
-compiler toolchain. The API itself still starts without loading the model;
-model initialization happens only when face enrollment is requested.
+compiler toolchain. For direct host development, run `python -m scripts.ensure_face_model` once before starting the API.
 
  .\venv\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 

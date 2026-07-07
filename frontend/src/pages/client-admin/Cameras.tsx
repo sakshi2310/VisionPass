@@ -84,7 +84,6 @@ export function CamerasPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [snapshotUrl, setSnapshotUrl] = useState("");
   const [snapshotCamera, setSnapshotCamera] = useState<Camera | null>(null);
-  const [liveCamera, setLiveCamera] = useState<Camera | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
 
   usePageTitle("Vision Pass | Cameras");
@@ -127,8 +126,8 @@ export function CamerasPage() {
 
   async function saveCamera(event: FormEvent) {
     event.preventDefault();
-    if (!draft.name.trim() || !draft.location.trim()) {
-      setToast({ tone: "error", title: "Missing details", message: "Camera name and location are required." });
+    if (!draft.name.trim()) {
+      setToast({ tone: "error", title: "Missing details", message: "Camera name is required." });
       return;
     }
     if (["ip_webcam", "phone_ip_webcam", "manual_snapshot"].includes(draft.camera_type) && !draft.snapshot_url.trim()) {
@@ -141,13 +140,13 @@ export function CamerasPage() {
     }
     const payload: CameraPayload = {
       name: draft.name.trim(),
-      location: draft.location.trim(),
+      location: draft.location.trim() || "Default",
       camera_type: draft.camera_type,
       phone_ip: draft.phone_ip.trim() || null,
       port: draft.port ? Number(draft.port) : null,
       stream_url: draft.stream_url.trim() || null,
       snapshot_url: draft.snapshot_url.trim() || null,
-      assigned_feature_scope: draft.assigned_feature_scope,
+      assigned_feature_scope: draft.assigned_feature_scope || "both",
       username: draft.username.trim() || null,
       password: draft.password || null,
       is_active: draft.is_active,
@@ -247,7 +246,6 @@ export function CamerasPage() {
               <div className="flex flex-wrap gap-2">
                 <Button size="sm" variant="secondary" leftIcon={busyId === camera.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <TestTube2 className="h-4 w-4" />} onClick={() => void handleTest(camera)} disabled={!!busyId || !camera.snapshot_url}>Test</Button>
                 <Button size="sm" variant="ghost" leftIcon={<Eye className="h-4 w-4" />} onClick={() => void handleSnapshot(camera)} disabled={!!busyId || !camera.snapshot_url}>Snapshot</Button>
-                <Button size="sm" variant="ghost" onClick={() => setLiveCamera(camera)} disabled={!camera.stream_url}>Live feed</Button>
                 <Button size="sm" variant="ghost" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(camera)} disabled={!!busyId}>Edit</Button>
                 <Button size="sm" variant="danger" leftIcon={<Trash2 className="h-4 w-4" />} onClick={() => void handleDelete(camera)} disabled={!!busyId}>Delete</Button>
               </div>
@@ -264,8 +262,7 @@ export function CamerasPage() {
         footer={<div className="flex justify-end gap-2"><Button variant="secondary" onClick={closeEditor}>Cancel</Button><Button leftIcon={busyId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} type="submit" form="camera-form" disabled={!!busyId}>Save camera</Button></div>}
       >
         <form id="camera-form" className="grid gap-4 md:grid-cols-2" onSubmit={(event) => void saveCamera(event)}>
-          <label className="grid gap-1 text-sm">Name<input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
-          <label className="grid gap-1 text-sm">Location<input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.location} onChange={(event) => setDraft({ ...draft, location: event.target.value })} /></label>
+          <label className="grid gap-1 text-sm md:col-span-2">Name<input className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
           <label className="grid gap-1 text-sm">
             Camera source type
             <select className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.camera_type} onChange={(event) => setDraft({ ...draft, camera_type: event.target.value as Camera["camera_type"] })}>
@@ -273,14 +270,6 @@ export function CamerasPage() {
               <option value="http_mjpeg">HTTP MJPEG Stream</option>
               <option value="phone_ip_webcam">Phone IP Webcam</option>
               <option value="manual_snapshot">Manual Snapshot URL</option>
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm">
-            Assigned module
-            <select className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.assigned_feature_scope} onChange={(event) => setDraft({ ...draft, assigned_feature_scope: event.target.value as Camera["assigned_feature_scope"] })}>
-              <option value="attendance">Attendance</option>
-              <option value="object_detection">Object Detection</option>
-              <option value="both">Both</option>
             </select>
           </label>
           {draft.camera_type === "phone_ip_webcam" ? (
@@ -302,13 +291,6 @@ export function CamerasPage() {
           <label className="grid gap-1 text-sm">Username<input autoComplete="off" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.username} onChange={(event) => setDraft({ ...draft, username: event.target.value })} /></label>
           <label className="grid gap-1 text-sm">Password<input type="password" autoComplete="new-password" className="rounded-2xl border border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900" value={draft.password} onChange={(event) => setDraft({ ...draft, password: event.target.value })} /></label>
         </form>
-      </Modal>
-
-      <Modal open={liveCamera !== null} title={liveCamera ? `${liveCamera.name} live feed` : "Live feed"} onClose={() => setLiveCamera(null)}>
-        {liveCamera?.stream_url ? (
-          <img src={liveCamera.stream_url} alt={`${liveCamera.name} live feed`} className="mx-auto max-h-[65vh] rounded-2xl object-contain" />
-        ) : null}
-        <p className="mt-3 text-center text-xs text-slate-500">The phone and this browser must be reachable on the same network unless the stream is securely exposed.</p>
       </Modal>
 
       <Modal open={snapshotCamera !== null} title={snapshotCamera ? `${snapshotCamera.name} snapshot` : "Camera snapshot"} onClose={() => { setSnapshotCamera(null); setSnapshotUrl(""); }}>

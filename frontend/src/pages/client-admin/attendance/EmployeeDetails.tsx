@@ -1,4 +1,4 @@
-﻿import { Loader2, ScanFace, ArrowLeft, Edit3, Trash2 } from "lucide-react";
+import { Loader2, ScanFace, ArrowLeft, Edit3, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 
@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Toast } from "@/components/ui/Toast";
+import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   deleteFaceEnrollment,
@@ -40,6 +41,8 @@ type ToastState = {
 export function EmployeeDetailsPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useApp();
+  const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [profile, setProfile] = useState<EmployeeFaceProfile | null>(null);
   const [images, setImages] = useState<EmployeeFaceImage[]>([]);
@@ -106,7 +109,7 @@ export function EmployeeDetailsPage() {
   }
 
   if (!id) {
-    return <Navigate to="/client-admin/attendance/employees" replace />;
+    return <Navigate to={`${adminBasePath}/attendance/employees`} replace />;
   }
 
   return (
@@ -119,13 +122,13 @@ export function EmployeeDetailsPage() {
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">View employee details, face enrollment status, and enrollment artifacts in one place.</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate("/client-admin/attendance/employees")}>
+            <Button variant="secondary" leftIcon={<ArrowLeft className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/employees`)}>
               Back
             </Button>
-            <Button variant="secondary" leftIcon={<Edit3 className="h-4 w-4" />} onClick={() => navigate(`/client-admin/attendance/employees?edit=${id}`)}>
+            <Button variant="secondary" leftIcon={<Edit3 className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/employees?edit=${id}`)}>
               Edit Employee
             </Button>
-            <Button variant="secondary" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`/client-admin/attendance/face-enrollment?employeeId=${id}`)}>
+            <Button variant="secondary" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/face-enrollment?employeeId=${id}`)}>
               Enroll / Re-enroll Face
             </Button>
           </div>

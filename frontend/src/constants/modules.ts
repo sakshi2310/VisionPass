@@ -25,11 +25,10 @@ const attendanceNavGroup: NavItem = {
   moduleKey: "attendance",
   children: [
     { key: "tenant-attendance-live", label: "Live Attendance", path: "/client-admin/attendance/live", icon: "ScanFace" },
-    { key: "tenant-attendance-settings", label: "Attendance Settings", path: "/client-admin/attendance/settings", icon: "Settings2" },
-    { key: "tenant-attendance-shifts", label: "Shift Management", path: "/client-admin/attendance/shifts", icon: "CalendarCheck2" },
-    { key: "tenant-attendance-holidays", label: "Holiday Management", path: "/client-admin/attendance/holidays", icon: "ClipboardList" },
+    { key: "tenant-attendance-settings", label: "One-time Settings", path: "/client-admin/attendance/settings", icon: "Settings2" },
+    { key: "tenant-attendance-shifts", label: "Shifts", path: "/client-admin/attendance/shifts", icon: "CalendarCheck2" },
+    { key: "tenant-attendance-holidays", label: "Holidays", path: "/client-admin/attendance/holidays", icon: "ClipboardList" },
     { key: "tenant-attendance-employees", label: "Employees", path: "/client-admin/attendance/employees", icon: "Users" },
-    { key: "tenant-attendance-face-enrollment", label: "Face Enrollment", path: "/client-admin/attendance/face-enrollment", icon: "ScanFace" },
   ],
 };
 
@@ -46,7 +45,6 @@ const objectDetectionNavGroup: NavItem = {
     { key: "tenant-detection-rules", label: "Detection Rules", path: "/client-admin/object-detection/rules", icon: "ShieldCheck" },
     { key: "tenant-detection-alerts", label: "Detection Alerts", path: "/client-admin/object-detection/alerts", icon: "Bell" },
     { key: "tenant-detection-reports", label: "Detection Reports", path: "/client-admin/object-detection/reports", icon: "ChartColumnIncreasing" },
-    { key: "tenant-detection-zones", label: "Zones & Confidence", path: "/client-admin/object-detection/zones", icon: "Settings2" },
   ],
 };
 
@@ -78,7 +76,16 @@ export const clientNavItems: NavItem[] = [
 
 export const tenantAdminNavItems: NavItem[] = [
   { key: "tenant-dashboard", label: "Dashboard", path: "/tenant-admin/dashboard", icon: "LayoutDashboard" },
-  { key: "tenant-cameras-direct", label: "Camera Management", path: "/client-admin/cameras", icon: "DoorOpen" },
+  {
+    key: "tenant-cameras",
+    label: "Camera Management",
+    path: "/tenant-admin/cameras",
+    icon: "DoorOpen",
+    children: [
+      { key: "tenant-cameras-config", label: "Camera Sources", path: "/tenant-admin/cameras", icon: "DoorOpen" },
+      { key: "tenant-cameras-zones", label: "Zone View", path: "/tenant-admin/cameras/zones", icon: "ScanFace" },
+    ],
+  },
   attendanceNavGroup,
   objectDetectionNavGroup,
   { key: "tenant-visitors", label: "Visitors", path: "/client-admin/visitors", icon: "Users", moduleKey: "visitor_management" },

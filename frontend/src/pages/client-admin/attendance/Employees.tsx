@@ -1,4 +1,4 @@
-﻿import { Loader2, Plus, RefreshCw, Save, ScanFace, Trash2, Pencil, Eye, Power, PowerOff } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Save, ScanFace, Trash2, Pencil, Eye, Power, PowerOff, Upload, ImagePlus, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -22,6 +22,7 @@ import {
   fetchFaceEnrollmentSummary,
   fetchShifts,
   updateEmployee,
+  uploadFaceImages,
   type AttendanceShift,
   type Employee,
   type EmployeePayload,
@@ -47,6 +48,8 @@ type Draft = {
 
 type FaceProfileMap = Record<string, { status: string; face_count: number; embedding_count: number }>;
 
+type FormErrors = Partial<Record<"full_name" | "email" | "faceFiles", string>>;
+
 type ToastState = {
   tone: "success" | "error";
   title: string;
@@ -68,9 +71,14 @@ const emptyDraft: Draft = {
   is_active: true,
 };
 
+function todayLocal() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
 function toPayload(draft: Draft): EmployeePayload {
   return {
-    employee_code: draft.employee_code.trim(),
+    employee_code: draft.employee_code.trim() || undefined,
     full_name: draft.full_name.trim(),
     email: draft.email.trim(),
     mobile: draft.mobile.trim() || null,
@@ -110,7 +118,7 @@ function faceTone(status: string) {
 }
 
 export function EmployeeListPage() {
-  const { currentTenant } = useApp();
+  const { currentTenant, user } = useApp();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -126,8 +134,17 @@ export function EmployeeListPage() {
   const [activeEmployee, setActiveEmployee] = useState<Employee | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [filters, setFilters] = useState({ search: "", department: "", shiftId: "", faceStatus: "" });
+  const [faceFiles, setFaceFiles] = useState<File[]>([]);
+  const [formErrors, setFormErrors] = useState<FormErrors>({});
+  const [formError, setFormError] = useState("");
+  const facePreviews = useMemo(
+    () => faceFiles.map((file) => ({ file, url: URL.createObjectURL(file) })),
+    [faceFiles],
+  );
 
   usePageTitle("Vision Pass | Employees");
+
+  const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
 
   async function loadData(showRefreshing = false) {
     try {
@@ -193,56 +210,142 @@ export function EmployeeListPage() {
 
   const departments = useMemo(() => Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean) as string[])), [employees]);
 
+  useEffect(() => () => {
+    facePreviews.forEach(({ url }) => URL.revokeObjectURL(url));
+  }, [facePreviews]);
+
+  function clearFieldError(field: keyof FormErrors) {
+    setFormErrors((current) => ({ ...current, [field]: undefined }));
+    setFormError("");
+  }
+
   function openCreate() {
+    const defaultShift = shifts.find((shift) => shift.is_default && shift.is_active) ?? shifts.find((shift) => shift.is_active);
     setMode("create");
     setActiveEmployee(null);
-    setDraft(emptyDraft);
+    setDraft({
+      ...emptyDraft,
+      department: "General",
+      joining_date: todayLocal(),
+      shift_id: defaultShift?.id ?? "",
+    });
+    setFaceFiles([]);
+    setFormErrors({});
+    setFormError("");
   }
 
   function openEdit(employee: Employee) {
     setMode("edit");
     setActiveEmployee(employee);
     setDraft(fromEmployee(employee));
+    setFaceFiles([]);
+    setFormErrors({});
+    setFormError("");
   }
 
   function closeModal() {
     setMode(null);
     setActiveEmployee(null);
     setDraft(emptyDraft);
+    setFaceFiles([]);
+    setFormErrors({});
+    setFormError("");
   }
 
   function validateDraft() {
-    if (!draft.employee_code.trim()) return "Employee code is required.";
-    if (!draft.full_name.trim()) return "Full name is required.";
-    if (!draft.email.trim()) return "Email is required.";
-    return "";
+    const nextErrors: FormErrors = {};
+    if (!draft.full_name.trim()) nextErrors.full_name = "Enter the employee's name.";
+    if (!draft.email.trim()) nextErrors.email = "Enter a work email address.";
+    else if (!/^\S+@\S+\.\S+$/.test(draft.email)) nextErrors.email = "Enter a valid email address.";
+    if (mode === "create" && faceFiles.length < 3) nextErrors.faceFiles = "Add at least 3 clear face photos.";
+    if (faceFiles.length > 10) nextErrors.faceFiles = "Use no more than 10 face photos.";
+    setFormErrors(nextErrors);
+    setFormError(Object.keys(nextErrors).length ? "Please fix the highlighted fields below." : "");
+    return Object.keys(nextErrors).length === 0;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const validationMessage = validateDraft();
-    if (validationMessage) {
-      setToast({ tone: "error", title: "Validation error", message: validationMessage });
+    if (!validateDraft()) return;
+
+    setSaving(true);
+    setFormError("");
+    const wasCreate = mode === "create";
+    let savedEmployee: Employee | null = null;
+
+    try {
+      const payload = toPayload(draft);
+      savedEmployee = wasCreate
+        ? await createEmployee(payload)
+        : activeEmployee
+          ? await updateEmployee(activeEmployee.id, payload)
+          : null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Unable to save employee.";
+      if (message.toLowerCase().includes("email")) setFormErrors((current) => ({ ...current, email: message }));
+      setFormError(message);
+      setSaving(false);
       return;
     }
 
-    try {
-      setSaving(true);
-      const payload = toPayload(draft);
-      if (mode === "create") {
-        await createEmployee(payload);
-        setToast({ tone: "success", title: "Employee created", message: "Employee saved for the current tenant." });
-      } else if (mode === "edit" && activeEmployee) {
-        await updateEmployee(activeEmployee.id, payload);
-        setToast({ tone: "success", title: "Employee updated", message: "Employee profile was saved successfully." });
-      }
-      closeModal();
-      await loadData(true);
-    } catch (err) {
-      setToast({ tone: "error", title: "Save failed", message: err instanceof Error ? err.message : "Unable to save employee." });
-    } finally {
+    if (!savedEmployee) {
       setSaving(false);
+      return;
     }
+
+    setEmployees((current) => wasCreate
+      ? [savedEmployee as Employee, ...current.filter((row) => row.id !== savedEmployee?.id)]
+      : current.map((row) => (row.id === savedEmployee?.id ? savedEmployee as Employee : row)));
+    setProfiles((current) => ({
+      ...current,
+      [savedEmployee.id]: current[savedEmployee.id] ?? { status: "Not Enrolled", face_count: 0, embedding_count: 0 },
+    }));
+    if (wasCreate) {
+      setSummary((current) => current ? { ...current, total_employees: current.total_employees + 1 } : current);
+    }
+    window.dispatchEvent(new CustomEvent("visionpass:employees-changed"));
+
+    if (faceFiles.length > 0) {
+      try {
+        const enrollment = await uploadFaceImages(savedEmployee.id, {
+          files: faceFiles,
+          re_enroll: !wasCreate,
+        });
+        setProfiles((current) => ({
+          ...current,
+          [savedEmployee!.id]: {
+            status: enrollment.profile.enrollment_status,
+            face_count: enrollment.profile.face_count,
+            embedding_count: enrollment.profile.embedding_count,
+          },
+        }));
+        if (enrollment.profile.enrollment_status !== "Enrolled") {
+          const rejected = enrollment.validation_results.find((result) => result.enrollment_status !== "valid");
+          throw new Error(rejected?.message ?? "At least 3 photos must pass face-quality checks.");
+        }
+      } catch (err) {
+        setMode("edit");
+        setActiveEmployee(savedEmployee);
+        setDraft(fromEmployee(savedEmployee));
+        const message = err instanceof Error ? err.message : "The face photos could not be enrolled.";
+        setFormErrors({ faceFiles: message });
+        setFormError(`${wasCreate ? `Employee ${savedEmployee.employee_code} was created, but` : "Profile changes were saved, but"} the face photos need attention.`);
+        setSaving(false);
+        void loadData(true);
+        return;
+      }
+    }
+
+    setToast({
+      tone: "success",
+      title: wasCreate ? "Employee ready" : "Employee updated",
+      message: faceFiles.length > 0
+        ? `${savedEmployee.full_name} was saved and face enrollment completed.`
+        : "Employee profile was saved successfully.",
+    });
+    closeModal();
+    setSaving(false);
+    await loadData(true);
   }
 
   async function handleActivate(employee: Employee) {
@@ -279,7 +382,7 @@ export function EmployeeListPage() {
     { label: "Failed", value: summary?.failed_employees ?? 0 },
   ];
 
-  if (!currentTenant) return <Navigate to="/client-admin/dashboard" replace />;
+  if (!currentTenant) return <Navigate to={`${adminBasePath}/dashboard`} replace />;
 
   return (
     <div className="grid gap-6">
@@ -388,13 +491,13 @@ export function EmployeeListPage() {
                 </td>
                 <td className="px-5 py-4">
                   <div className="flex flex-wrap gap-2">
-                    <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => navigate(`/client-admin/attendance/employees/${employee.id}`)}>
+                    <Button variant="secondary" size="sm" leftIcon={<Eye className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/employees/${employee.id}`)}>
                       View
                     </Button>
                     <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(employee)}>
                       Edit
                     </Button>
-                    <Button variant="secondary" size="sm" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`/client-admin/attendance/face-enrollment?employeeId=${employee.id}`)}>
+                    <Button variant="secondary" size="sm" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/face-enrollment?employeeId=${employee.id}`)}>
                       Enroll Face
                     </Button>
                     <Button variant="secondary" size="sm" leftIcon={employee.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />} onClick={() => void handleActivate(employee)} disabled={saving}>
@@ -414,56 +517,142 @@ export function EmployeeListPage() {
       <Modal
         open={mode !== null}
         title={mode === "create" ? "Add employee" : "Edit employee"}
-        description="Create or update a tenant employee record."
+        description={mode === "create" ? "Name, email, and clear face photosâ€”that is all you need to get started." : "Update the employee profile or replace face photos."}
         onClose={closeModal}
+        className="max-w-3xl"
         footer={
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={closeModal}>
-              Cancel
-            </Button>
-            <Button type="submit" form="employee-form" leftIcon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} disabled={saving}>
-              {saving ? "Saving..." : mode === "create" ? "Create employee" : "Save employee"}
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {mode === "create" ? "Employee ID and sensible defaults are added automatically." : `Employee ID: ${draft.employee_code}`}
+            </p>
+            <div className="flex gap-2">
+              <Button variant="secondary" onClick={closeModal}>Cancel</Button>
+              <Button type="submit" form="employee-form" leftIcon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} disabled={saving}>
+                {saving ? "Saving..." : mode === "create" ? "Create & enroll" : "Save employee"}
+              </Button>
+            </div>
           </div>
         }
       >
-        <form id="employee-form" onSubmit={handleSubmit} className="grid gap-4">
-          <div className="grid gap-4 md:grid-cols-2">
-            <Input label="Employee Code" value={draft.employee_code} onChange={(event) => setDraft((current) => ({ ...current, employee_code: event.target.value }))} />
-            <Input label="Full Name" value={draft.full_name} onChange={(event) => setDraft((current) => ({ ...current, full_name: event.target.value }))} />
-            <Input label="Email" type="email" value={draft.email} onChange={(event) => setDraft((current) => ({ ...current, email: event.target.value }))} />
-            <Input label="Mobile" value={draft.mobile} onChange={(event) => setDraft((current) => ({ ...current, mobile: event.target.value }))} />
-            <Input label="Gender" value={draft.gender} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value }))} />
-            <Input label="Date of Birth" type="date" value={draft.date_of_birth} onChange={(event) => setDraft((current) => ({ ...current, date_of_birth: event.target.value }))} />
-            <Input label="Department" value={draft.department} onChange={(event) => setDraft((current) => ({ ...current, department: event.target.value }))} />
-            <Input label="Designation" value={draft.designation} onChange={(event) => setDraft((current) => ({ ...current, designation: event.target.value }))} />
-            <div>
-              <div className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">Assigned Shift</div>
-              <select className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 dark:border-white/10 dark:bg-slate-950/60 dark:text-white" value={draft.shift_id} onChange={(event) => setDraft((current) => ({ ...current, shift_id: event.target.value }))}>
-                <option value="">No shift</option>
-                {shifts.map((shift) => (
-                  <option key={shift.id} value={shift.id}>
-                    {shift.name}
-                  </option>
-                ))}
-              </select>
+        <form id="employee-form" onSubmit={handleSubmit} className="grid gap-5" noValidate>
+          {formError ? (
+            <div role="alert" className="rounded-2xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-300">
+              {formError}
             </div>
-            <Input label="Joining Date" type="date" value={draft.joining_date} onChange={(event) => setDraft((current) => ({ ...current, joining_date: event.target.value }))} />
-            <div>
-              <div className="mb-1 text-sm font-medium text-slate-700 dark:text-slate-200">Employee Type</div>
-              <select className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 dark:border-white/10 dark:bg-slate-950/60 dark:text-white" value={draft.employee_type} onChange={(event) => setDraft((current) => ({ ...current, employee_type: event.target.value }))}>
-                {employeeTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </div>
+          ) : null}
+
+          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/5 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-300">Employee ID</p>
+            <p className="mt-1 text-sm text-slate-300">{mode === "create" ? "Generated automatically after you save" : draft.employee_code}</p>
           </div>
-          <label className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/70 px-4 py-3 text-sm text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-950/60 dark:text-slate-200">
-            <input type="checkbox" checked={draft.is_active} onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))} />
-            Active employee
-          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Input
+              label="Full name *"
+              autoFocus
+              placeholder="e.g. Sakshi Sharma"
+              value={draft.full_name}
+              error={formErrors.full_name}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, full_name: event.target.value }));
+                clearFieldError("full_name");
+              }}
+            />
+            <Input
+              label="Work email *"
+              type="email"
+              placeholder="name@company.com"
+              value={draft.email}
+              error={formErrors.email}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, email: event.target.value }));
+                clearFieldError("email");
+              }}
+            />
+          </div>
+
+          <div className={`overflow-hidden rounded-3xl border border-dashed p-5 transition ${formErrors.faceFiles ? "border-rose-400/70 bg-rose-500/5" : "border-cyan-400/40 bg-gradient-to-br from-cyan-500/10 via-slate-950/20 to-blue-500/10"}`}>
+            <label className="grid cursor-pointer place-items-center gap-3 rounded-2xl px-4 py-6 text-center transition hover:bg-white/5">
+              <span className="grid h-14 w-14 place-items-center rounded-2xl bg-cyan-400/15 text-cyan-300 shadow-[0_0_30px_rgba(34,211,238,0.12)]">
+                <ImagePlus className="h-7 w-7" />
+              </span>
+              <span>
+                <span className="block text-base font-semibold text-white">Add clear face photos {mode === "create" ? "*" : ""}</span>
+                <span className="mt-1 block text-sm text-slate-400">Choose 3â€“10 images: front, slight left, and slight right.</span>
+              </span>
+              <span className="inline-flex items-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-medium text-cyan-200">
+                <Upload className="h-4 w-4" /> Choose photos
+              </span>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                className="sr-only"
+                onChange={(event) => {
+                  const selected = Array.from(event.target.files ?? []).filter((file) => file.type.startsWith("image/")).slice(0, 10);
+                  setFaceFiles(selected);
+                  setFormErrors((current) => ({ ...current, faceFiles: selected.length > 0 && selected.length < 3 ? "Select at least 3 photos." : undefined }));
+                  setFormError("");
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
+
+            {facePreviews.length > 0 ? (
+              <div className="mt-4 grid grid-cols-3 gap-3 sm:grid-cols-5">
+                {facePreviews.map(({ file, url }, index) => (
+                  <div key={`${file.name}-${file.lastModified}`} className="group relative aspect-square overflow-hidden rounded-2xl border border-white/10 bg-slate-900">
+                    <img src={url} alt={`Face preview ${index + 1}`} className="h-full w-full object-cover" />
+                    <button
+                      type="button"
+                      aria-label={`Remove ${file.name}`}
+                      onClick={() => setFaceFiles((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                      className="absolute right-1.5 top-1.5 rounded-full bg-slate-950/85 p-1.5 text-white opacity-90 transition hover:bg-rose-500"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
+              <span>Well-lit photos without masks or sunglasses work best.</span>
+              <span className={faceFiles.length >= 3 ? "font-semibold text-emerald-400" : ""}>{faceFiles.length}/10 selected</span>
+            </div>
+            {formErrors.faceFiles ? <p className="mt-2 text-sm font-medium text-rose-400">{formErrors.faceFiles}</p> : null}
+          </div>
+
+          <details className="group rounded-2xl border border-white/10 bg-white/[0.03] p-4" open={mode === "edit"}>
+            <summary className="cursor-pointer list-none font-medium text-slate-200">
+              Optional employment details
+              <span className="ml-2 text-xs font-normal text-slate-500">Department, shift, phone, and more</span>
+            </summary>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <Input label="Mobile" value={draft.mobile} onChange={(event) => setDraft((current) => ({ ...current, mobile: event.target.value }))} />
+              <Input label="Department" value={draft.department} onChange={(event) => setDraft((current) => ({ ...current, department: event.target.value }))} />
+              <Input label="Designation" value={draft.designation} onChange={(event) => setDraft((current) => ({ ...current, designation: event.target.value }))} />
+              <div>
+                <div className="mb-2 text-sm font-medium text-slate-300">Assigned shift</div>
+                <select className="h-11 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-cyan-400" value={draft.shift_id} onChange={(event) => setDraft((current) => ({ ...current, shift_id: event.target.value }))}>
+                  <option value="">No shift</option>
+                  {shifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.name}</option>)}
+                </select>
+              </div>
+              <Input label="Joining date" type="date" value={draft.joining_date} onChange={(event) => setDraft((current) => ({ ...current, joining_date: event.target.value }))} />
+              <div>
+                <div className="mb-2 text-sm font-medium text-slate-300">Employee type</div>
+                <select className="h-11 w-full rounded-2xl border border-white/10 bg-slate-950/70 px-4 text-sm text-white outline-none focus:border-cyan-400" value={draft.employee_type} onChange={(event) => setDraft((current) => ({ ...current, employee_type: event.target.value }))}>
+                  {employeeTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                </select>
+              </div>
+              <Input label="Gender" value={draft.gender} onChange={(event) => setDraft((current) => ({ ...current, gender: event.target.value }))} />
+              <Input label="Date of birth" type="date" value={draft.date_of_birth} onChange={(event) => setDraft((current) => ({ ...current, date_of_birth: event.target.value }))} />
+              <label className="flex items-center gap-3 rounded-2xl border border-white/10 px-4 py-3 text-sm text-slate-200 md:col-span-2">
+                <input type="checkbox" checked={draft.is_active} onChange={(event) => setDraft((current) => ({ ...current, is_active: event.target.checked }))} />
+                Active employee
+              </label>
+            </div>
+          </details>
         </form>
       </Modal>
 
