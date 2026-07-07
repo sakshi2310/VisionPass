@@ -180,6 +180,70 @@ export type TodayAttendanceItem = DailyAttendance & {
   employee_code: string;
 };
 
+
+export type AttendanceBoardStatus = "present" | "late" | "half_day" | "absent" | "holiday" | "not_detected";
+
+export type AttendanceBoardEmployee = {
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  email: string;
+  department?: string | null;
+  designation?: string | null;
+  shift_id?: string | null;
+  shift_name?: string | null;
+  status: AttendanceBoardStatus;
+  first_seen_at?: string | null;
+  last_seen_at?: string | null;
+  total_present_minutes: number;
+  total_absent_minutes: number;
+  sessions_count: number;
+  latest_event_type?: string | null;
+  latest_confidence?: number | null;
+};
+
+export type AttendanceBoardResponse = {
+  attendance_date: string;
+  generated_at: string;
+  stats: Record<AttendanceBoardStatus | "total", number>;
+  employees: AttendanceBoardEmployee[];
+};
+
+export type AttendanceSession = {
+  check_in: string;
+  check_out?: string | null;
+  duration_minutes: number;
+  source?: string | null;
+  camera_id?: string | null;
+  confidence?: number | null;
+  is_open: boolean;
+};
+
+export type AttendanceDetectionHistory = {
+  id: string;
+  event_type: string;
+  source: string;
+  camera_id?: string | null;
+  confidence?: number | null;
+  event_time: string;
+  metadata: Record<string, unknown>;
+};
+
+export type EmployeeAttendanceSummary = {
+  attendance_date: string;
+  employee: {
+    id: string;
+    employee_code: string;
+    employee_name: string;
+    email: string;
+    department?: string | null;
+    designation?: string | null;
+  };
+  summary: AttendanceBoardEmployee | null;
+  sessions: AttendanceSession[];
+  detection_history: AttendanceDetectionHistory[];
+};
+
 export type AttendanceMarkResponse = {
   event: AttendanceEvent;
   daily: DailyAttendance;
@@ -625,6 +689,31 @@ export function deleteFaceEnrollment(employeeId: string) {
   return requestJson<void>(`/api/client-admin/attendance/employees/${employeeId}/face-enrollment`, {
     method: "DELETE",
   });
+}
+
+
+export async function fetchAttendanceBoard(filters?: {
+  date?: string;
+  search?: string;
+  department?: string;
+  shiftId?: string;
+  status?: string;
+}): Promise<AttendanceBoardResponse> {
+  const params = new URLSearchParams();
+  if (filters?.date) params.set("date", filters.date);
+  if (filters?.search) params.set("search", filters.search);
+  if (filters?.department) params.set("department", filters.department);
+  if (filters?.shiftId) params.set("shift_id", filters.shiftId);
+  if (filters?.status && filters.status !== "all") params.set("status", filters.status);
+  const query = params.toString();
+  return requestJson<AttendanceBoardResponse>(`/api/client-admin/attendance/board${query ? `?${query}` : ""}`);
+}
+
+export function fetchEmployeeAttendanceSummary(employeeId: string, date?: string): Promise<EmployeeAttendanceSummary> {
+  const params = new URLSearchParams();
+  if (date) params.set("date", date);
+  const query = params.toString();
+  return requestJson<EmployeeAttendanceSummary>(`/api/client-admin/attendance/board/${employeeId}${query ? `?${query}` : ""}`);
 }
 
 export async function fetchTodayAttendance(): Promise<TodayAttendanceItem[]> {

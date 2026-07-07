@@ -1,4 +1,4 @@
-﻿import { lazy, Suspense } from "react";
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 
 import { AuthLayout } from "@/layouts/AuthLayout";
@@ -20,6 +20,7 @@ const EmployeeListPage = lazy(() => import("@/pages/client-admin/attendance/Empl
 const EmployeeDetailsPage = lazy(() => import("@/pages/client-admin/attendance/EmployeeDetails").then((module) => ({ default: module.EmployeeDetailsPage })));
 const FaceEnrollmentPage = lazy(() => import("@/pages/client-admin/attendance/FaceEnrollment").then((module) => ({ default: module.FaceEnrollmentPage })));
 const LiveAttendancePage = lazy(() => import("@/pages/client-admin/attendance/LiveAttendance").then((module) => ({ default: module.LiveAttendancePage })));
+const AttendanceBoardPage = lazy(() => import("@/pages/client-admin/attendance/AttendanceBoard").then((module) => ({ default: module.AttendanceBoardPage })));
 const CamerasPage = lazy(() => import("@/pages/client-admin/Cameras").then((module) => ({ default: module.CamerasPage })));
 const LiveRecognitionPage = lazy(() => import("@/pages/client-admin/LiveRecognition").then((module) => ({ default: module.LiveRecognitionPage })));
 const ClientAdminDashboard = lazy(() => import("@/pages/client-admin/Dashboard").then((module) => ({ default: module.ClientAdminDashboard })));
@@ -97,6 +98,7 @@ export function AppRoutes() {
                 <Route path="/tenant-admin/attendance/employees" element={<EmployeeListPage />} />
                 <Route path="/tenant-admin/attendance/employees/:id" element={<EmployeeDetailsPage />} />
                 <Route path="/tenant-admin/attendance/face-enrollment" element={<FaceEnrollmentPage />} />
+                <Route path="/tenant-admin/attendance/board" element={<AttendanceBoardPage />} />
                 <Route path="/tenant-admin/attendance/live" element={<LiveAttendancePage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>
@@ -134,6 +136,7 @@ export function AppRoutes() {
                 <Route path="/client-admin/attendance/employees" element={<EmployeeListPage />} />
                 <Route path="/client-admin/attendance/employees/:id" element={<EmployeeDetailsPage />} />
                 <Route path="/client-admin/attendance/face-enrollment" element={<FaceEnrollmentPage />} />
+                <Route path="/client-admin/attendance/board" element={<AttendanceBoardPage />} />
                 <Route path="/client-admin/attendance/live" element={<LiveAttendancePage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>

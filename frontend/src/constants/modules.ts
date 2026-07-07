@@ -20,11 +20,11 @@ export const moduleDefinitions: ModuleDefinition[] = [
 const attendanceNavGroup: NavItem = {
   key: "tenant-attendance",
   label: "Attendance",
-  path: "/client-admin/attendance/settings",
+  path: "/client-admin/attendance/board",
   icon: "CalendarCheck2",
   moduleKey: "attendance",
   children: [
-    { key: "tenant-attendance-live", label: "Live Attendance", path: "/client-admin/attendance/live", icon: "ScanFace" },
+    { key: "tenant-attendance-board", label: "Attendance Board", path: "/client-admin/attendance/board", icon: "ClipboardList" },
     { key: "tenant-attendance-settings", label: "One-time Settings", path: "/client-admin/attendance/settings", icon: "Settings2" },
     { key: "tenant-attendance-shifts", label: "Shifts", path: "/client-admin/attendance/shifts", icon: "CalendarCheck2" },
     { key: "tenant-attendance-holidays", label: "Holidays", path: "/client-admin/attendance/holidays", icon: "ClipboardList" },

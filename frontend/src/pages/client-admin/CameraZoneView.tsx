@@ -48,7 +48,6 @@ export function CameraZoneViewPage() {
 
   useEffect(() => {
     if (!activeCameras.some((camera) => camera.snapshot_url)) return;
-
     const timer = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       setFeedVersions((current) => {
@@ -59,7 +58,6 @@ export function CameraZoneViewPage() {
         return next;
       });
     }, 3000);
-
     return () => window.clearInterval(timer);
   }, [activeCameras]);
 
@@ -94,7 +92,7 @@ export function CameraZoneViewPage() {
           <div>
             <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Camera management</p>
             <h1 className="mt-2 text-3xl font-semibold text-white">Zone View</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Camera feeds fill a landscape 16:9 frame and snapshot images refresh automatically every 3 seconds. Manual refresh remains available whenever a feed stalls.</p>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">All active camera feeds appear in a two-column grid. Snapshot images auto-refresh every 3 seconds. Click any feed to open it in a new tab.</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadCameras()} disabled={loading}>Reload cameras</Button>
@@ -128,8 +126,7 @@ export function CameraZoneViewPage() {
                   <div className="grid h-full place-items-center text-center text-slate-400"><div><Video className="mx-auto h-9 w-9" /><p className="mt-2 text-sm">No browser-compatible HTTP stream or snapshot URL.</p></div></div>
                 )}
               </button>
-              <p className="mt-3 text-xs text-slate-500">Click the feed to open it in a new tab. HTTP MJPEG and Phone IP Webcam streams preview directly. RTSP requires a browser-compatible gateway.</p>
-
+              <p className="mt-3 text-xs text-slate-500">HTTP MJPEG and Phone IP Webcam streams preview directly. RTSP requires a browser-compatible gateway.</p>
             </Card>
           );
         })}

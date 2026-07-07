@@ -1,4 +1,4 @@
-﻿"""Client admin attendance routes."""
+"""Client admin attendance routes."""
 
 from __future__ import annotations
 
@@ -41,6 +41,8 @@ from app.schemas.employee import (
     FaceImageValidationResult,
 )
 from app.services.attendance_service import (
+    get_attendance_board,
+    get_employee_attendance_summary,
     create_holiday,
     create_shift,
     delete_holiday,
@@ -279,6 +281,52 @@ def remove_holiday(
     deleted = delete_holiday(db, current_admin.tenant_id, holiday_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
+
+
+
+@router.get("/board")
+def read_attendance_board(
+    date: str | None = Query(default=None),
+    search: str | None = Query(default=None),
+    department: str | None = Query(default=None),
+    shift_id: str | None = Query(default=None),
+    status_filter: str | None = Query(default=None, alias="status"),
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+) -> dict:
+    try:
+        return get_attendance_board(
+            db,
+            current_admin.tenant_id,
+            attendance_date=date,
+            search=search,
+            department=department,
+            shift_id=shift_id,
+            status_filter=status_filter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
+@router.get("/board/{employee_id}")
+def read_employee_attendance_summary(
+    employee_id: str,
+    date: str | None = Query(default=None),
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+) -> dict:
+    try:
+        summary = get_employee_attendance_summary(
+            db,
+            current_admin.tenant_id,
+            employee_id,
+            attendance_date=date,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    if summary is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+    return summary
 
 
 @router.get("/employees", response_model=EmployeeListResponse)

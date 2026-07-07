@@ -755,3 +755,283 @@ def list_today_attendance(
         }
         for record, employee in rows
     ]
+
+
+
+def _parse_attendance_board_date(value: date | str | None, tenant_zone: ZoneInfo) -> date:
+    if value is None:
+        return datetime.now(timezone.utc).astimezone(tenant_zone).date()
+    if isinstance(value, date):
+        return value
+    return date.fromisoformat(value)
+
+
+def _combine_local_datetime(attendance_date: date, value: time | None, tenant_zone: ZoneInfo) -> datetime | None:
+    if value is None:
+        return None
+    return datetime.combine(attendance_date, value, tzinfo=tenant_zone)
+
+
+def _selected_day_bounds(attendance_date: date, tenant_zone: ZoneInfo) -> tuple[datetime, datetime]:
+    start_local = datetime.combine(attendance_date, time.min, tzinfo=tenant_zone)
+    end_local = start_local + timedelta(days=1)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _status_for_board(
+    record: DailyAttendanceRecord | None,
+    *,
+    attendance_date: date,
+    tenant_zone: ZoneInfo,
+    shift: AttendanceShift | None,
+    now_utc: datetime,
+) -> str:
+    if record is not None:
+        return record.status
+    if _is_holiday.__name__:
+        # Holiday calculation needs db, so holiday fallback is handled by get_attendance_board.
+        pass
+    if attendance_date < now_utc.astimezone(tenant_zone).date():
+        return "absent"
+    if shift is None:
+        return "not_detected"
+    cutoff_local = _combine_local_datetime(attendance_date, shift.start_time, tenant_zone)
+    if cutoff_local is None:
+        return "not_detected"
+    cutoff_local = cutoff_local + timedelta(minutes=shift.late_after_minutes or shift.grace_period_minutes or 0)
+    return "absent" if now_utc.astimezone(tenant_zone) > cutoff_local else "not_detected"
+
+
+def _daily_present_minutes(
+    record: DailyAttendanceRecord | None,
+    *,
+    attendance_date: date,
+    tenant_zone: ZoneInfo,
+    now_utc: datetime,
+) -> int:
+    if record is None or record.first_check_in is None:
+        return 0
+    if record.last_check_out is not None:
+        if record.total_work_minutes:
+            return int(record.total_work_minutes)
+        return max(0, int((record.last_check_out - record.first_check_in).total_seconds() // 60))
+    if attendance_date == now_utc.astimezone(tenant_zone).date():
+        return max(0, int((now_utc - record.first_check_in).total_seconds() // 60))
+    return int(record.total_work_minutes or 0)
+
+
+def _build_employee_sessions(events: list[AttendanceEvent], now_utc: datetime) -> list[dict]:
+    sessions: list[dict] = []
+    open_event: AttendanceEvent | None = None
+    for event in events:
+        if event.event_type == "check_in":
+            if open_event is not None:
+                duration = max(0, int((event.event_time - open_event.event_time).total_seconds() // 60))
+                sessions.append({
+                    "check_in": open_event.event_time,
+                    "check_out": event.event_time,
+                    "duration_minutes": duration,
+                    "source": open_event.source,
+                    "camera_id": open_event.camera_id,
+                    "confidence": float(open_event.confidence) if open_event.confidence is not None else None,
+                    "is_open": False,
+                })
+            open_event = event
+        elif event.event_type == "check_out":
+            if open_event is not None:
+                duration = max(0, int((event.event_time - open_event.event_time).total_seconds() // 60))
+                sessions.append({
+                    "check_in": open_event.event_time,
+                    "check_out": event.event_time,
+                    "duration_minutes": duration,
+                    "source": open_event.source,
+                    "camera_id": open_event.camera_id,
+                    "confidence": float(open_event.confidence) if open_event.confidence is not None else None,
+                    "is_open": False,
+                })
+                open_event = None
+    if open_event is not None:
+        duration = max(0, int((now_utc - open_event.event_time).total_seconds() // 60))
+        sessions.append({
+            "check_in": open_event.event_time,
+            "check_out": None,
+            "duration_minutes": duration,
+            "source": open_event.source,
+            "camera_id": open_event.camera_id,
+            "confidence": float(open_event.confidence) if open_event.confidence is not None else None,
+            "is_open": True,
+        })
+    return sessions
+
+
+def get_attendance_board(
+    db: Session,
+    tenant_id: str,
+    *,
+    attendance_date: date | str | None = None,
+    search: str | None = None,
+    department: str | None = None,
+    shift_id: str | None = None,
+    status_filter: str | None = None,
+) -> dict:
+    """Return all active employees with their date-specific attendance board status."""
+
+    tenant_zone = _tenant_zone(db, tenant_id)
+    selected_date = _parse_attendance_board_date(attendance_date, tenant_zone)
+    now_utc = datetime.now(timezone.utc)
+    start_utc, end_utc = _selected_day_bounds(selected_date, tenant_zone)
+    is_holiday = _is_holiday(db, tenant_id, selected_date)
+
+    employee_query = db.query(AttendanceEmployee).filter(
+        AttendanceEmployee.tenant_id == tenant_id,
+        AttendanceEmployee.is_active.is_(True),
+    )
+    if search:
+        term = f"%{search.strip()}%"
+        employee_query = employee_query.filter(
+            or_(
+                AttendanceEmployee.full_name.ilike(term),
+                AttendanceEmployee.employee_code.ilike(term),
+                AttendanceEmployee.email.ilike(term),
+            )
+        )
+    if department:
+        employee_query = employee_query.filter(AttendanceEmployee.department == department)
+    if shift_id:
+        employee_query = employee_query.filter(AttendanceEmployee.shift_id == shift_id)
+
+    employees = employee_query.order_by(AttendanceEmployee.full_name.asc()).all()
+    employee_ids = [employee.id for employee in employees]
+
+    records = {}
+    if employee_ids:
+        for record in db.query(DailyAttendanceRecord).filter(
+            DailyAttendanceRecord.tenant_id == tenant_id,
+            DailyAttendanceRecord.attendance_date == selected_date,
+            DailyAttendanceRecord.employee_id.in_(employee_ids),
+        ).all():
+            records[record.employee_id] = record
+
+    shifts = {shift.id: shift for shift in db.query(AttendanceShift).filter(AttendanceShift.tenant_id == tenant_id).all()}
+    default_shift = next((shift for shift in shifts.values() if shift.is_default and shift.is_active), None)
+
+    events_by_employee: dict[str, list[AttendanceEvent]] = {employee_id: [] for employee_id in employee_ids}
+    if employee_ids:
+        events = db.query(AttendanceEvent).filter(
+            AttendanceEvent.tenant_id == tenant_id,
+            AttendanceEvent.employee_id.in_(employee_ids),
+            AttendanceEvent.event_time >= start_utc,
+            AttendanceEvent.event_time < end_utc,
+        ).order_by(AttendanceEvent.event_time.asc()).all()
+        for event in events:
+            events_by_employee.setdefault(event.employee_id, []).append(event)
+
+    rows: list[dict] = []
+    stats = {"total": 0, "present": 0, "late": 0, "absent": 0, "half_day": 0, "holiday": 0, "not_detected": 0}
+
+    for employee in employees:
+        record = records.get(employee.id)
+        shift = shifts.get(employee.shift_id) if employee.shift_id else default_shift
+        status = "holiday" if is_holiday and record is None else _status_for_board(
+            record,
+            attendance_date=selected_date,
+            tenant_zone=tenant_zone,
+            shift=shift,
+            now_utc=now_utc,
+        )
+        sessions = _build_employee_sessions(events_by_employee.get(employee.id, []), now_utc)
+        present_minutes = _daily_present_minutes(record, attendance_date=selected_date, tenant_zone=tenant_zone, now_utc=now_utc)
+        if present_minutes == 0 and sessions:
+            present_minutes = sum(int(session["duration_minutes"] or 0) for session in sessions)
+        expected_minutes = int(shift.full_day_min_minutes) if shift else 0
+        absent_minutes = max(0, expected_minutes - present_minutes) if status in {"absent", "late", "half_day", "present", "not_detected"} else 0
+        latest_event = events_by_employee.get(employee.id, [])[-1] if events_by_employee.get(employee.id) else None
+
+        row = {
+            "employee_id": employee.id,
+            "employee_code": employee.employee_code,
+            "employee_name": employee.full_name,
+            "email": employee.email,
+            "department": employee.department,
+            "designation": employee.designation,
+            "shift_id": employee.shift_id,
+            "shift_name": shift.name if shift else None,
+            "status": status,
+            "first_seen_at": record.first_check_in if record else (sessions[0]["check_in"] if sessions else None),
+            "last_seen_at": record.last_check_out if record and record.last_check_out else (latest_event.event_time if latest_event else None),
+            "total_present_minutes": present_minutes,
+            "total_absent_minutes": absent_minutes,
+            "sessions_count": len(sessions),
+            "latest_event_type": latest_event.event_type if latest_event else None,
+            "latest_confidence": float(latest_event.confidence) if latest_event and latest_event.confidence is not None else None,
+        }
+        if status_filter and status_filter != "all" and row["status"] != status_filter:
+            continue
+        rows.append(row)
+        stats["total"] += 1
+        if row["status"] in stats:
+            stats[row["status"]] += 1
+
+    return {
+        "attendance_date": selected_date,
+        "generated_at": now_utc,
+        "stats": stats,
+        "employees": rows,
+    }
+
+
+def get_employee_attendance_summary(
+    db: Session,
+    tenant_id: str,
+    employee_id: str,
+    *,
+    attendance_date: date | str | None = None,
+) -> dict | None:
+    tenant_zone = _tenant_zone(db, tenant_id)
+    selected_date = _parse_attendance_board_date(attendance_date, tenant_zone)
+    now_utc = datetime.now(timezone.utc)
+    start_utc, end_utc = _selected_day_bounds(selected_date, tenant_zone)
+
+    employee = db.query(AttendanceEmployee).filter(
+        AttendanceEmployee.tenant_id == tenant_id,
+        AttendanceEmployee.id == employee_id,
+        AttendanceEmployee.is_active.is_(True),
+    ).one_or_none()
+    if employee is None:
+        return None
+
+    board = get_attendance_board(db, tenant_id, attendance_date=selected_date)
+    board_row = next((row for row in board["employees"] if row["employee_id"] == employee_id), None)
+    events = db.query(AttendanceEvent).filter(
+        AttendanceEvent.tenant_id == tenant_id,
+        AttendanceEvent.employee_id == employee_id,
+        AttendanceEvent.event_time >= start_utc,
+        AttendanceEvent.event_time < end_utc,
+    ).order_by(AttendanceEvent.event_time.asc()).all()
+    sessions = _build_employee_sessions(events, now_utc)
+    detection_history = [
+        {
+            "id": event.id,
+            "event_type": event.event_type,
+            "source": event.source,
+            "camera_id": event.camera_id,
+            "confidence": float(event.confidence) if event.confidence is not None else None,
+            "event_time": event.event_time,
+            "metadata": event.event_metadata or {},
+        }
+        for event in events
+    ]
+    return {
+        "attendance_date": selected_date,
+        "employee": {
+            "id": employee.id,
+            "employee_code": employee.employee_code,
+            "employee_name": employee.full_name,
+            "email": employee.email,
+            "department": employee.department,
+            "designation": employee.designation,
+        },
+        "summary": board_row,
+        "sessions": sessions,
+        "detection_history": detection_history,
+    }

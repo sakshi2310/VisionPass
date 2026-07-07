@@ -1,5 +1,6 @@
 import { Camera as CameraIcon, Eye, Loader2, Pencil, Plus, RefreshCw, Save, TestTube2, Trash2 } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -77,6 +78,7 @@ type ToastState = {
 } | null;
 
 export function CamerasPage() {
+  const navigate = useNavigate();
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState("");
@@ -219,6 +221,7 @@ export function CamerasPage() {
           </div>
           <div className="flex gap-2">
             <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadCameras()} disabled={loading}>Refresh</Button>
+            <Button variant="secondary" leftIcon={<Eye className="h-4 w-4" />} onClick={() => navigate("zones")}>Zone View</Button>
             <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>Add camera</Button>
           </div>
         </div>
