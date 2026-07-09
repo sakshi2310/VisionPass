@@ -2,6 +2,7 @@ from app.models.attendance import (
     AttendanceEvent,
     AttendanceFaceSettings,
     AttendanceHoliday,
+    AttendancePresenceSession,
     AttendanceSettings,
     AttendanceShift,
     AttendanceWorkingDay,

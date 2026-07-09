@@ -241,6 +241,23 @@ class DailyAttendanceRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class AttendancePresenceSessionRead(BaseModel):
+    id: str
+    tenant_id: str
+    employee_id: str
+    attendance_date: date
+    session_type: Literal["present", "absent"]
+    started_at: datetime
+    ended_at: datetime | None = None
+    latest_source: str | None = None
+    camera_id: str | None = None
+    reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AttendanceMarkResponse(BaseModel):
     event: AttendanceEventRead
     daily: DailyAttendanceRead

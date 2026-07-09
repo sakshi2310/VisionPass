@@ -51,7 +51,7 @@ def _frame_response(result: dict) -> CameraFrameResponse:
         attendance = AttendanceMarkResponse(
             event=AttendanceEventRead.model_validate(marked["event"]),
             daily=DailyAttendanceRead.model_validate(marked["daily"]),
-            employee_id=marked["employee"].id,
+            employee_id=str(marked["employee"].id),
             employee_name=marked["employee"].full_name,
             employee_code=marked["employee"].employee_code,
             message=marked["message"],

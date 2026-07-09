@@ -228,3 +228,42 @@ class DailyAttendanceRecord(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class AttendancePresenceSession(Base):
+    __tablename__ = "attendance_presence_sessions"
+    __table_args__ = (
+        Index("ix_attendance_presence_sessions_tenant_employee_date", "tenant_id", "employee_id", "attendance_date"),
+        Index("ix_attendance_presence_sessions_tenant_employee_start", "tenant_id", "employee_id", "started_at"),
+        CheckConstraint("session_type IN ('present', 'absent')", name="ck_attendance_presence_sessions_type"),
+    )
+
+    id: Mapped[str] = mapped_column(PGUUID(as_uuid=False), primary_key=True, server_default=text("gen_random_uuid()"))
+    tenant_id: Mapped[str] = mapped_column(
+        PGUUID(as_uuid=False),
+        ForeignKey("tenants.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    employee_id: Mapped[str] = mapped_column(
+        PGUUID(as_uuid=False),
+        ForeignKey("attendance_employees.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    attendance_date: Mapped[date] = mapped_column(Date, nullable=False)
+    session_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    latest_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    camera_id: Mapped[str | None] = mapped_column(
+        PGUUID(as_uuid=False),
+        ForeignKey("cameras.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
+import logging
 from typing import Iterable
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -13,11 +14,13 @@ from app.core.config import settings as app_settings
 from app.models.attendance import (
     AttendanceEvent,
     AttendanceHoliday,
+    AttendancePresenceSession,
     AttendanceSettings,
     AttendanceShift,
     AttendanceWorkingDay,
     DailyAttendanceRecord,
 )
+from app.models.camera import Camera, CameraEvent
 from app.models.employee import AttendanceEmployee
 from app.services.alert_service import create_alert
 
@@ -31,6 +34,8 @@ DEFAULT_WORKING_DAY_MAP = {
     5: True,
     6: True,
 }
+
+logger = logging.getLogger(__name__)
 
 
 class AttendanceMarkError(ValueError):
@@ -481,6 +486,20 @@ def _is_holiday(db: Session, tenant_id: str, attendance_date: date) -> bool:
     )
 
 
+def _is_working_day(db: Session, tenant_id: str, attendance_date: date) -> bool:
+    row = (
+        db.query(AttendanceWorkingDay.is_working)
+        .filter(
+            AttendanceWorkingDay.tenant_id == tenant_id,
+            AttendanceWorkingDay.day_of_week == attendance_date.weekday(),
+        )
+        .one_or_none()
+    )
+    if row is None:
+        return DEFAULT_WORKING_DAY_MAP.get(attendance_date.weekday(), True)
+    return bool(row[0])
+
+
 def _daily_record(
     db: Session,
     tenant_id: str,
@@ -554,6 +573,200 @@ def _ensure_not_duplicate(
                 f"{app_settings.attendance_duplicate_cooldown_minutes} minutes."
             ),
         )
+
+
+def log_live_recognition_decision(
+    *,
+    camera_enabled: bool,
+    tenant_id: str,
+    camera_id: str | None,
+    frame_received: bool,
+    face_detected: bool,
+    matched: bool,
+    employee_id: str | None,
+    employee_name: str | None,
+    confidence: float | None,
+    decided_event: str,
+    final_status: str,
+    reason: str | None = None,
+) -> None:
+    logger.info(
+        (
+            "[LIVE_RECOGNITION] tenant_id=%s camera_id=%s camera_enabled=%s frame_received=%s "
+            "face_detected=%s matched=%s employee_id=%s employee_name=%s confidence=%s "
+            "decided_event=%s final_status=%s reason=%s"
+        ),
+        tenant_id,
+        camera_id,
+        camera_enabled,
+        frame_received,
+        face_detected,
+        matched,
+        employee_id,
+        employee_name,
+        confidence,
+        decided_event,
+        final_status,
+        reason or "-",
+    )
+
+
+def process_camera_presence_recognition(
+    db: Session,
+    tenant_id: str,
+    *,
+    employee_id: str | None,
+    employee_name: str | None,
+    confidence: float | None,
+    recognition_status: str,
+    camera_id: str | None = None,
+    camera_enabled: bool = True,
+    event_time: datetime | None = None,
+) -> dict:
+    tenant_zone = _tenant_zone(db, tenant_id)
+    occurred_at = _normalize_event_time(event_time, tenant_zone)
+    attendance_date = occurred_at.astimezone(tenant_zone).date()
+
+    if employee_id is None:
+        reason = "Unknown face detected" if recognition_status == "UNKNOWN" else "No face detected" if recognition_status == "NO_FACE" else "Face was not matched"
+        final_status = "not_detected"
+        log_live_recognition_decision(
+            camera_enabled=camera_enabled,
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            frame_received=True,
+            face_detected=False,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=confidence,
+            decided_event="no_face" if recognition_status == "NO_FACE" else "unknown_face" if recognition_status == "UNKNOWN" else "error",
+            final_status=final_status,
+            reason=reason,
+        )
+        return {
+            "attendance": None,
+            "decision": "no_face" if recognition_status == "NO_FACE" else "unknown_face" if recognition_status == "UNKNOWN" else "error",
+            "final_attendance_status": final_status,
+            "reason": reason,
+        }
+
+    employee = (
+        db.query(AttendanceEmployee)
+        .filter(
+            AttendanceEmployee.tenant_id == tenant_id,
+            AttendanceEmployee.id == employee_id,
+            AttendanceEmployee.is_active.is_(True),
+        )
+        .one_or_none()
+    )
+    if employee is None:
+        reason = "Employee not found or inactive"
+        log_live_recognition_decision(
+            camera_enabled=camera_enabled,
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            frame_received=True,
+            face_detected=True,
+            matched=False,
+            employee_id=employee_id,
+            employee_name=employee_name,
+            confidence=confidence,
+            decided_event="error",
+            final_status="not_detected",
+            reason=reason,
+        )
+        return {
+            "attendance": None,
+            "decision": "error",
+            "final_attendance_status": "not_detected",
+            "reason": reason,
+        }
+
+    daily = _daily_record(db, tenant_id, employee_id, attendance_date, lock=True)
+    shift = _employee_shift(db, tenant_id, employee)
+    if daily is not None and daily.first_check_in is not None:
+        final_status = daily.status or "present"
+        reason = "Employee already has a check-in today"
+        log_live_recognition_decision(
+            camera_enabled=camera_enabled,
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            frame_received=True,
+            face_detected=True,
+            matched=True,
+            employee_id=employee_id,
+            employee_name=employee.full_name,
+            confidence=confidence,
+            decided_event="duplicate",
+            final_status=final_status,
+            reason=reason,
+        )
+        return {
+            "attendance": None,
+            "decision": "duplicate",
+            "final_attendance_status": final_status,
+            "reason": reason,
+        }
+
+    try:
+        result = mark_attendance(
+            db,
+            tenant_id,
+            employee_id,
+            event_type="check_in",
+            source="camera",
+            camera_id=camera_id,
+            confidence=confidence,
+            event_time=occurred_at,
+            metadata={
+                "recognition_status": recognition_status,
+                "presence_mode": "camera",
+                "camera_enabled": camera_enabled,
+                "decision": "check_in",
+            },
+        )
+    except AttendanceMarkError as exc:
+        log_live_recognition_decision(
+            camera_enabled=camera_enabled,
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            frame_received=True,
+            face_detected=True,
+            matched=True,
+            employee_id=employee_id,
+            employee_name=employee.full_name,
+            confidence=confidence,
+            decided_event="error",
+            final_status="not_detected",
+            reason=exc.message,
+        )
+        raise
+
+    final_status = result["daily"].status
+    reason = "Check-in recorded from live camera"
+    if final_status == "late":
+        reason = "Check-in recorded after shift cutoff"
+    log_live_recognition_decision(
+        camera_enabled=camera_enabled,
+        tenant_id=tenant_id,
+        camera_id=camera_id,
+        frame_received=True,
+        face_detected=True,
+        matched=True,
+        employee_id=employee_id,
+        employee_name=employee.full_name,
+        confidence=confidence,
+        decided_event="check_in",
+        final_status=final_status,
+        reason=reason,
+    )
+    return {
+        "attendance": result,
+        "decision": "check_in",
+        "final_attendance_status": final_status,
+        "reason": reason,
+    }
 
 
 def _initial_status(
@@ -673,6 +886,20 @@ def mark_attendance(
     db.commit()
     db.refresh(event)
     db.refresh(daily)
+    logger.info(
+        (
+            "[ATTENDANCE_EVENT] tenant_id=%s employee_id=%s employee_name=%s event_type=%s "
+            "source=%s event_time=%s daily_record_id=%s final_day_status=%s"
+        ),
+        tenant_id,
+        employee_id,
+        employee.full_name,
+        event_type,
+        source,
+        event.event_time.isoformat(),
+        daily.id,
+        daily.status,
+    )
     return {
         "event": event,
         "daily": daily,
@@ -778,6 +1005,35 @@ def _selected_day_bounds(attendance_date: date, tenant_zone: ZoneInfo) -> tuple[
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _board_status_reason(
+    *,
+    attendance_date: date,
+    tenant_zone: ZoneInfo,
+    shift: AttendanceShift | None,
+    now_utc: datetime,
+    is_holiday: bool,
+    is_working_day: bool,
+) -> str:
+    today_local = now_utc.astimezone(tenant_zone).date()
+    if is_holiday:
+        return "Holiday"
+    if not is_working_day:
+        return "Non-working day"
+    if attendance_date < today_local:
+        return "Absent on selected date"
+    if attendance_date > today_local:
+        return "Future date"
+    if shift is None:
+        return "No shift assigned"
+    cutoff_local = _combine_local_datetime(attendance_date, shift.start_time, tenant_zone)
+    if cutoff_local is None:
+        return "No shift cutoff configured"
+    cutoff_local = cutoff_local + timedelta(minutes=shift.late_after_minutes or shift.grace_period_minutes or 0)
+    if now_utc.astimezone(tenant_zone) > cutoff_local:
+        return "Absent after cutoff"
+    return "No camera detection yet"
+
+
 def _status_for_board(
     record: DailyAttendanceRecord | None,
     *,
@@ -785,14 +1041,18 @@ def _status_for_board(
     tenant_zone: ZoneInfo,
     shift: AttendanceShift | None,
     now_utc: datetime,
+    is_holiday: bool,
+    is_working_day: bool,
 ) -> str:
     if record is not None:
         return record.status
-    if _is_holiday.__name__:
-        # Holiday calculation needs db, so holiday fallback is handled by get_attendance_board.
-        pass
-    if attendance_date < now_utc.astimezone(tenant_zone).date():
+    if is_holiday or not is_working_day:
+        return "holiday"
+    today_local = now_utc.astimezone(tenant_zone).date()
+    if attendance_date < today_local:
         return "absent"
+    if attendance_date > today_local:
+        return "not_detected"
     if shift is None:
         return "not_detected"
     cutoff_local = _combine_local_datetime(attendance_date, shift.start_time, tenant_zone)
@@ -818,6 +1078,332 @@ def _daily_present_minutes(
     if attendance_date == now_utc.astimezone(tenant_zone).date():
         return max(0, int((now_utc - record.first_check_in).total_seconds() // 60))
     return int(record.total_work_minutes or 0)
+
+
+def _board_cutoff_local(
+    *,
+    attendance_date: date,
+    tenant_zone: ZoneInfo,
+    shift: AttendanceShift | None,
+) -> datetime | None:
+    if shift is None:
+        return None
+    cutoff_local = _combine_local_datetime(attendance_date, shift.start_time, tenant_zone)
+    if cutoff_local is None:
+        return None
+    return cutoff_local + timedelta(minutes=shift.late_after_minutes or shift.grace_period_minutes or 0)
+
+
+def _board_employee_reason(
+    *,
+    status: str,
+    attendance_date: date,
+    tenant_zone: ZoneInfo,
+    shift: AttendanceShift | None,
+    now_utc: datetime,
+    is_holiday: bool,
+    is_working_day: bool,
+    latest_event: AttendanceEvent | None,
+) -> str:
+    today_local = now_utc.astimezone(tenant_zone).date()
+    if is_holiday:
+        return "Holiday"
+    if not is_working_day:
+        return "Non-working day"
+    if status == "present":
+        return "Visible in live camera feed."
+    if status == "absent":
+        return "Absent after attendance cutoff."
+    if status == "not_detected":
+        cutoff_local = _board_cutoff_local(attendance_date=attendance_date, tenant_zone=tenant_zone, shift=shift)
+        if attendance_date == today_local and cutoff_local is not None and now_utc.astimezone(tenant_zone) <= cutoff_local:
+            return "Not detected yet."
+        return "No camera detection/check-in found."
+    return "No camera detection/check-in found."
+
+
+def _build_board_employee_row(
+    *,
+    employee: AttendanceEmployee,
+    record: DailyAttendanceRecord | None,
+    latest_event: AttendanceEvent | None,
+    status: str,
+    reason: str,
+    work_minutes: int,
+    sessions: list[dict],
+) -> dict:
+    latest_event_time = getattr(latest_event, "event_time", None) or getattr(latest_event, "created_at", None)
+    check_in_time = record.first_check_in if record and record.first_check_in else (sessions[0]["check_in"] if sessions else None)
+    check_out_time = record.last_check_out if record and record.last_check_out else (
+        sessions[-1]["check_out"] if sessions and sessions[-1]["check_out"] is not None else None
+    )
+    last_seen_time = record.last_check_out if record and record.last_check_out else latest_event_time
+    return {
+        "employee_id": employee.id,
+        "employee_code": employee.employee_code,
+        "employee_name": employee.full_name,
+        "email": employee.email,
+        "department": employee.department,
+        "designation": employee.designation,
+        "shift_id": employee.shift_id,
+        "status": status,
+        "check_in_time": check_in_time,
+        "check_out_time": check_out_time,
+        "work_minutes": work_minutes,
+        "latest_source": getattr(latest_event, "source", None),
+        "latest_event_time": latest_event_time,
+        "latest_event_type": getattr(latest_event, "event_type", None),
+        "last_seen_time": last_seen_time,
+        "reason": reason,
+        "camera_id": getattr(latest_event, "camera_id", None),
+        "sessions_count": len(sessions),
+    }
+
+
+def _build_latest_session_rows(
+    *,
+    db: Session,
+    tenant_id: str,
+    selected_date: date,
+    start_utc: datetime,
+    end_utc: datetime,
+    camera_names: dict[str, str],
+) -> list[dict]:
+    rows = (
+        db.query(AttendanceEvent, AttendanceEmployee)
+        .join(
+            AttendanceEmployee,
+            (AttendanceEmployee.id == AttendanceEvent.employee_id)
+            & (AttendanceEmployee.tenant_id == AttendanceEvent.tenant_id),
+        )
+        .filter(
+            AttendanceEvent.tenant_id == tenant_id,
+            AttendanceEvent.event_time >= start_utc,
+            AttendanceEvent.event_time < end_utc,
+        )
+        .order_by(AttendanceEvent.event_time.desc())
+        .all()
+    )
+    latest_sessions: list[dict] = []
+    for event, employee in rows:
+        latest_sessions.append(
+            {
+                "event_id": event.id,
+                "employee_id": employee.id,
+                "employee_code": employee.employee_code,
+                "employee_name": employee.full_name,
+                "event_type": event.event_type,
+                "source": event.source,
+                "event_time": event.event_time,
+                "camera_id": event.camera_id,
+                "camera_name": camera_names.get(event.camera_id) if event.camera_id else None,
+                "confidence": float(event.confidence) if event.confidence is not None else None,
+                "metadata": event.event_metadata or {},
+            }
+        )
+    return latest_sessions
+
+
+def _latest_presence_session(
+    db: Session,
+    tenant_id: str,
+    employee_id: str,
+    attendance_date: date,
+) -> AttendancePresenceSession | None:
+    return (
+        db.query(AttendancePresenceSession)
+        .filter(
+            AttendancePresenceSession.tenant_id == tenant_id,
+            AttendancePresenceSession.employee_id == employee_id,
+            AttendancePresenceSession.attendance_date == attendance_date,
+        )
+        .order_by(
+            AttendancePresenceSession.started_at.desc(),
+            AttendancePresenceSession.created_at.desc(),
+        )
+        .one_or_none()
+    )
+
+
+def _upsert_presence_session(
+    db: Session,
+    *,
+    tenant_id: str,
+    employee_id: str,
+    attendance_date: date,
+    session_type: str,
+    session_time: datetime,
+    latest_source: str | None,
+    camera_id: str | None,
+    reason: str | None,
+) -> AttendancePresenceSession:
+    current = _latest_presence_session(db, tenant_id, employee_id, attendance_date)
+    if current is not None and current.session_type == session_type and current.ended_at is None:
+        current.latest_source = latest_source
+        current.camera_id = camera_id
+        current.reason = reason
+        return current
+
+    if current is not None and current.session_type != session_type and current.ended_at is None:
+        current.ended_at = session_time
+        current.latest_source = latest_source
+        current.camera_id = camera_id
+        current.reason = reason
+        db.add(current)
+
+    session = AttendancePresenceSession(
+        tenant_id=tenant_id,
+        employee_id=employee_id,
+        attendance_date=attendance_date,
+        session_type=session_type,
+        started_at=session_time,
+        ended_at=None,
+        latest_source=latest_source,
+        camera_id=camera_id,
+        reason=reason,
+    )
+    db.add(session)
+    return session
+
+
+def _sync_presence_sessions(
+    db: Session,
+    *,
+    tenant_id: str,
+    attendance_date: date,
+    rows: list[dict],
+    now_utc: datetime,
+) -> list[AttendancePresenceSession]:
+    synced: list[AttendancePresenceSession] = []
+    for row in rows:
+        status = row["status"]
+        if status == "holiday":
+            continue
+        session_type = "present" if status == "present" else "absent"
+        if session_type == "present":
+            session_time = row["last_seen_time"] or row["latest_event_time"] or now_utc
+        else:
+            session_time = now_utc
+        session = _upsert_presence_session(
+            db,
+            tenant_id=tenant_id,
+            employee_id=row["employee_id"],
+            attendance_date=attendance_date,
+            session_type=session_type,
+            session_time=session_time,
+            latest_source=row.get("latest_source"),
+            camera_id=row.get("camera_id"),
+            reason=row.get("reason"),
+        )
+        synced.append(session)
+    db.commit()
+    return synced
+
+
+def _list_presence_sessions(
+    db: Session,
+    *,
+    tenant_id: str,
+    attendance_date: date,
+) -> list[AttendancePresenceSession]:
+    return (
+        db.query(AttendancePresenceSession)
+        .filter(
+            AttendancePresenceSession.tenant_id == tenant_id,
+            AttendancePresenceSession.attendance_date == attendance_date,
+        )
+        .order_by(
+            AttendancePresenceSession.employee_id.asc(),
+            AttendancePresenceSession.started_at.asc(),
+            AttendancePresenceSession.created_at.asc(),
+        )
+        .all()
+    )
+
+
+def _presence_session_to_dict(session: AttendancePresenceSession) -> dict:
+    return {
+        "id": session.id,
+        "tenant_id": session.tenant_id,
+        "employee_id": session.employee_id,
+        "attendance_date": session.attendance_date,
+        "session_type": session.session_type,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "latest_source": session.latest_source,
+        "camera_id": session.camera_id,
+        "reason": session.reason,
+        "created_at": session.created_at,
+        "updated_at": session.updated_at,
+    }
+
+
+def _build_latest_camera_matches(
+    db: Session,
+    *,
+    tenant_id: str,
+    employee_ids: list[str],
+    start_utc: datetime,
+    end_utc: datetime,
+) -> dict[str, CameraEvent]:
+    if not employee_ids:
+        return {}
+    rows = (
+        db.query(CameraEvent)
+        .filter(
+            CameraEvent.tenant_id == tenant_id,
+            CameraEvent.employee_id.in_(employee_ids),
+            CameraEvent.created_at >= start_utc,
+            CameraEvent.created_at < end_utc,
+            CameraEvent.recognition_status == "MATCHED",
+        )
+        .order_by(CameraEvent.created_at.desc())
+        .all()
+    )
+    latest_matches: dict[str, CameraEvent] = {}
+    for event in rows:
+        employee_id = str(event.employee_id)
+        if employee_id not in latest_matches:
+            latest_matches[employee_id] = event
+    return latest_matches
+
+
+def _count_camera_events(
+    db: Session,
+    tenant_id: str,
+    start_utc: datetime,
+    end_utc: datetime,
+) -> tuple[int, int, str | None, datetime | None]:
+    camera_events = (
+        db.query(CameraEvent)
+        .filter(
+            CameraEvent.tenant_id == tenant_id,
+            CameraEvent.created_at >= start_utc,
+            CameraEvent.created_at < end_utc,
+        )
+        .order_by(CameraEvent.created_at.desc())
+        .all()
+    )
+    unknown_face_count = sum(1 for event in camera_events if event.recognition_status == "UNKNOWN")
+    no_face_count = sum(1 for event in camera_events if event.recognition_status == "NO_FACE")
+    latest_recognition_result = next(
+        (event.recognition_status for event in camera_events if event.recognition_status != "FRAME_CAPTURED"),
+        camera_events[0].recognition_status if camera_events else None,
+    )
+    last_camera_frame_time = camera_events[0].created_at if camera_events else None
+    return unknown_face_count, no_face_count, latest_recognition_result, last_camera_frame_time
+
+
+def _active_attendance_camera_count(db: Session, tenant_id: str) -> int:
+    return (
+        db.query(Camera.id)
+        .filter(
+            Camera.tenant_id == tenant_id,
+            Camera.is_active.is_(True),
+            Camera.assigned_feature_scope.in_(("attendance", "both")),
+        )
+        .count()
+    )
 
 
 def _build_employee_sessions(events: list[AttendanceEvent], now_utc: datetime) -> list[dict]:
@@ -864,6 +1450,46 @@ def _build_employee_sessions(events: list[AttendanceEvent], now_utc: datetime) -
     return sessions
 
 
+def _live_camera_status(db: Session, tenant_id: str) -> dict:
+    camera = (
+        db.query(Camera)
+        .filter(
+            Camera.tenant_id == tenant_id,
+            Camera.assigned_feature_scope.in_(("attendance", "both")),
+        )
+        .order_by(Camera.is_active.desc(), Camera.last_seen_at.desc().nullslast(), Camera.updated_at.desc())
+        .first()
+    )
+    if camera is None:
+        return {
+            "camera_id": None,
+            "camera_name": None,
+            "enabled": False,
+            "health_status": "unknown",
+            "last_frame_at": None,
+        }
+    return {
+        "camera_id": camera.id,
+        "camera_name": camera.name,
+        "enabled": bool(camera.is_active),
+        "health_status": camera.health_status,
+        "last_frame_at": camera.last_seen_at,
+    }
+
+
+def _unknown_face_attempt_count(db: Session, tenant_id: str, start_utc: datetime, end_utc: datetime) -> int:
+    return (
+        db.query(CameraEvent.id)
+        .filter(
+            CameraEvent.tenant_id == tenant_id,
+            CameraEvent.created_at >= start_utc,
+            CameraEvent.created_at < end_utc,
+            CameraEvent.recognition_status == "UNKNOWN",
+        )
+        .count()
+    )
+
+
 def get_attendance_board(
     db: Session,
     tenant_id: str,
@@ -874,13 +1500,13 @@ def get_attendance_board(
     shift_id: str | None = None,
     status_filter: str | None = None,
 ) -> dict:
-    """Return all active employees with their date-specific attendance board status."""
-
+    """Return the attendance board projection for a tenant and date."""
     tenant_zone = _tenant_zone(db, tenant_id)
     selected_date = _parse_attendance_board_date(attendance_date, tenant_zone)
     now_utc = datetime.now(timezone.utc)
     start_utc, end_utc = _selected_day_bounds(selected_date, tenant_zone)
     is_holiday = _is_holiday(db, tenant_id, selected_date)
+    is_working_day = _is_working_day(db, tenant_id, selected_date)
 
     employee_query = db.query(AttendanceEmployee).filter(
         AttendanceEmployee.tenant_id == tenant_id,
@@ -902,6 +1528,8 @@ def get_attendance_board(
 
     employees = employee_query.order_by(AttendanceEmployee.full_name.asc()).all()
     employee_ids = [employee.id for employee in employees]
+    live_presence_window_seconds = max(app_settings.camera_frame_interval_seconds * 3, 10)
+    live_presence_cutoff = now_utc - timedelta(seconds=live_presence_window_seconds)
 
     records = {}
     if employee_ids:
@@ -909,8 +1537,16 @@ def get_attendance_board(
             DailyAttendanceRecord.tenant_id == tenant_id,
             DailyAttendanceRecord.attendance_date == selected_date,
             DailyAttendanceRecord.employee_id.in_(employee_ids),
-        ).all():
+            ).all():
             records[record.employee_id] = record
+
+    latest_camera_matches = _build_latest_camera_matches(
+        db,
+        tenant_id=tenant_id,
+        employee_ids=employee_ids,
+        start_utc=start_utc,
+        end_utc=end_utc,
+    )
 
     shifts = {shift.id: shift for shift in db.query(AttendanceShift).filter(AttendanceShift.tenant_id == tenant_id).all()}
     default_shift = next((shift for shift in shifts.values() if shift.is_default and shift.is_active), None)
@@ -926,19 +1562,66 @@ def get_attendance_board(
         for event in events:
             events_by_employee.setdefault(event.employee_id, []).append(event)
 
+    camera_names = {
+        camera.id: camera.name
+        for camera in db.query(Camera)
+        .filter(Camera.tenant_id == tenant_id)
+        .all()
+    }
+
     rows: list[dict] = []
-    stats = {"total": 0, "present": 0, "late": 0, "absent": 0, "half_day": 0, "holiday": 0, "not_detected": 0}
+    session_rows: list[dict] = []
+    present_employees: list[dict] = []
+    absent_employees: list[dict] = []
+    latest_sessions = _build_latest_session_rows(
+        db=db,
+        tenant_id=tenant_id,
+        selected_date=selected_date,
+        start_utc=start_utc,
+        end_utc=end_utc,
+        camera_names=camera_names,
+    )
+    unknown_face_count, no_face_count, last_recognition_result, last_camera_frame_time = _count_camera_events(
+        db,
+        tenant_id,
+        start_utc,
+        end_utc,
+    )
+    active_attendance_camera_count = _active_attendance_camera_count(db, tenant_id)
+    stats = {
+        "total": 0,
+        "present": 0,
+        "late": 0,
+        "absent": 0,
+        "half_day": 0,
+        "holiday": 0,
+        "not_detected": 0,
+        "unknown_face_attempts": unknown_face_count,
+    }
 
     for employee in employees:
         record = records.get(employee.id)
         shift = shifts.get(employee.shift_id) if employee.shift_id else default_shift
-        status = "holiday" if is_holiday and record is None else _status_for_board(
-            record,
-            attendance_date=selected_date,
-            tenant_zone=tenant_zone,
-            shift=shift,
-            now_utc=now_utc,
-        )
+        latest_camera_match = latest_camera_matches.get(employee.id)
+        live_present = latest_camera_match is not None and latest_camera_match.created_at >= live_presence_cutoff
+        if live_present:
+            status = "present"
+        elif is_holiday and record is None:
+            status = "holiday"
+        elif selected_date > now_utc.astimezone(tenant_zone).date():
+            status = "not_detected"
+        elif selected_date < now_utc.astimezone(tenant_zone).date():
+            status = "absent"
+        else:
+            cutoff_local = _board_cutoff_local(
+                attendance_date=selected_date,
+                tenant_zone=tenant_zone,
+                shift=shift,
+            )
+            if cutoff_local is not None and now_utc.astimezone(tenant_zone) > cutoff_local:
+                status = "absent"
+            else:
+                status = "not_detected"
         sessions = _build_employee_sessions(events_by_employee.get(employee.id, []), now_utc)
         present_minutes = _daily_present_minutes(record, attendance_date=selected_date, tenant_zone=tenant_zone, now_utc=now_utc)
         if present_minutes == 0 and sessions:
@@ -946,37 +1629,119 @@ def get_attendance_board(
         expected_minutes = int(shift.full_day_min_minutes) if shift else 0
         absent_minutes = max(0, expected_minutes - present_minutes) if status in {"absent", "late", "half_day", "present", "not_detected"} else 0
         latest_event = events_by_employee.get(employee.id, [])[-1] if events_by_employee.get(employee.id) else None
-
-        row = {
-            "employee_id": employee.id,
-            "employee_code": employee.employee_code,
-            "employee_name": employee.full_name,
-            "email": employee.email,
-            "department": employee.department,
-            "designation": employee.designation,
-            "shift_id": employee.shift_id,
-            "shift_name": shift.name if shift else None,
-            "status": status,
-            "first_seen_at": record.first_check_in if record else (sessions[0]["check_in"] if sessions else None),
-            "last_seen_at": record.last_check_out if record and record.last_check_out else (latest_event.event_time if latest_event else None),
-            "total_present_minutes": present_minutes,
-            "total_absent_minutes": absent_minutes,
-            "sessions_count": len(sessions),
-            "latest_event_type": latest_event.event_type if latest_event else None,
-            "latest_confidence": float(latest_event.confidence) if latest_event and latest_event.confidence is not None else None,
-        }
+        reason = _board_employee_reason(
+            status=status,
+            attendance_date=selected_date,
+            tenant_zone=tenant_zone,
+            shift=shift,
+            now_utc=now_utc,
+            is_holiday=is_holiday,
+            is_working_day=is_working_day,
+            latest_event=latest_camera_match or latest_event,
+        )
+        row = _build_board_employee_row(
+            employee=employee,
+            record=record,
+            latest_event=latest_camera_match or latest_event,
+            status=status,
+            reason=reason,
+            work_minutes=present_minutes,
+            sessions=sessions,
+        )
+        row["shift_name"] = shift.name if shift else None
+        row["first_seen_at"] = record.first_check_in if record else (sessions[0]["check_in"] if sessions else None)
+        row["last_seen_at"] = (
+            latest_camera_match.created_at
+            if latest_camera_match is not None
+            else record.last_check_out if record and record.last_check_out else (latest_event.event_time if latest_event else None)
+        )
+        row["total_present_minutes"] = present_minutes
+        row["total_absent_minutes"] = absent_minutes
+        row["latest_event_source"] = row["latest_source"]
+        row["latest_confidence"] = float(latest_camera_match.confidence) if latest_camera_match and latest_camera_match.confidence is not None else (
+            float(latest_event.confidence) if latest_event and latest_event.confidence is not None else None
+        )
+        row["attendance_message"] = reason
+        session_rows.append(row)
         if status_filter and status_filter != "all" and row["status"] != status_filter:
             continue
         rows.append(row)
         stats["total"] += 1
         if row["status"] in stats:
             stats[row["status"]] += 1
+        if row["status"] == "present":
+            present_employees.append(row)
+        elif row["status"] in {"absent", "not_detected"}:
+            absent_employees.append(row)
+
+    _sync_presence_sessions(
+        db,
+        tenant_id=tenant_id,
+        attendance_date=selected_date,
+        rows=session_rows,
+        now_utc=now_utc,
+    )
+    presence_sessions = _list_presence_sessions(
+        db,
+        tenant_id=tenant_id,
+        attendance_date=selected_date,
+    )
+
+    latest_sessions.sort(
+        key=lambda item: item["event_time"] or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+
+    debug_summary = {
+        "tenant_id": tenant_id,
+        "selected_date": selected_date,
+        "total_active_employees": len(employees),
+        "present_count": len(present_employees),
+        "absent_count": len([row for row in absent_employees if row["status"] == "absent"]),
+        "not_detected_count": len([row for row in absent_employees if row["status"] == "not_detected"]),
+        "holiday_count": len([row for row in rows if row["status"] == "holiday"]),
+        "latest_event_time": latest_sessions[0]["event_time"] if latest_sessions else None,
+        "active_attendance_camera_count": active_attendance_camera_count,
+        "camera_enabled": active_attendance_camera_count > 0,
+        "last_camera_frame_time": last_camera_frame_time,
+        "last_recognition_result": last_recognition_result,
+        "unknown_face_count": unknown_face_count,
+        "no_face_count": no_face_count,
+        "live_presence_window_seconds": live_presence_window_seconds,
+    }
+
+    logger.info(
+        (
+            "[ATTENDANCE_BOARD] tenant_id=%s selected_date=%s active_employees=%s present_count=%s "
+            "absent_count=%s not_detected_count=%s latest_event_time=%s active_attendance_camera_count=%s"
+        ),
+        tenant_id,
+        selected_date.isoformat(),
+        debug_summary["total_active_employees"],
+        debug_summary["present_count"],
+        debug_summary["absent_count"],
+        debug_summary["not_detected_count"],
+        debug_summary["latest_event_time"].isoformat() if debug_summary["latest_event_time"] else "-",
+        active_attendance_camera_count,
+    )
 
     return {
         "attendance_date": selected_date,
         "generated_at": now_utc,
         "stats": stats,
         "employees": rows,
+        "present_employees": present_employees,
+        "absent_employees": absent_employees,
+        "latest_sessions": latest_sessions,
+        "presence_sessions": [_presence_session_to_dict(session) for session in presence_sessions],
+        "debug_summary": debug_summary,
+        "live_camera_status": {
+            "camera_id": None,
+            "camera_name": None,
+            "enabled": bool(active_attendance_camera_count),
+            "health_status": "online" if active_attendance_camera_count else "unknown",
+            "last_frame_at": last_camera_frame_time,
+        },
     }
 
 
@@ -1009,6 +1774,15 @@ def get_employee_attendance_summary(
         AttendanceEvent.event_time < end_utc,
     ).order_by(AttendanceEvent.event_time.asc()).all()
     sessions = _build_employee_sessions(events, now_utc)
+    presence_sessions = [
+        _presence_session_to_dict(session)
+        for session in _list_presence_sessions(
+            db,
+            tenant_id=tenant_id,
+            attendance_date=selected_date,
+        )
+        if session.employee_id == employee.id
+    ]
     detection_history = [
         {
             "id": event.id,
@@ -1033,5 +1807,6 @@ def get_employee_attendance_summary(
         },
         "summary": board_row,
         "sessions": sessions,
+        "presence_sessions": presence_sessions,
         "detection_history": detection_history,
     }

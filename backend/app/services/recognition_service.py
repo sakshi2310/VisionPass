@@ -51,7 +51,7 @@ def find_best_employee_match(
     if row is None:
         return None
     return {
-        "employee_id": row["employee_id"],
+        "employee_id": str(row["employee_id"]),
         "employee_name": row["employee_name"],
         "distance": float(row["distance"]),
         "confidence": float(row["confidence"]),

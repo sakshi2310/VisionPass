@@ -1,5 +1,5 @@
 import { ExternalLink, Plus, RefreshCw, Video } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { Badge } from "@/components/ui/Badge";
@@ -9,12 +9,21 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Toast } from "@/components/ui/Toast";
 import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
-import { fetchCameras, type Camera } from "@/services/clientAdminAttendance";
+import { fetchCameras, recognizeAndMarkCameraAttendance, type Camera, type CameraFrameResult } from "@/services/clientAdminAttendance";
 
 function feedUrl(camera: Camera, version: number) {
   const rawUrl = camera.snapshot_url ?? (camera.stream_url?.startsWith("http") ? camera.stream_url : "");
   if (!rawUrl) return "";
   return `${rawUrl}${rawUrl.includes("?") ? "&" : "?"}vpRefresh=${version}`;
+}
+
+function formatClockTime(value?: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
 }
 
 export function CameraZoneViewPage() {
@@ -23,6 +32,8 @@ export function CameraZoneViewPage() {
   const basePath = user?.role === "TENANT_ADMIN" ? "/tenant-admin" : "/client-admin";
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [feedVersions, setFeedVersions] = useState<Record<string, number>>({});
+  const [autoStatus, setAutoStatus] = useState<Record<string, { running: boolean; label: string; updated_at?: string }>>({});
+  const autoBusyRef = useRef<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: "success" | "error"; title: string; message: string } | null>(null);
 
@@ -59,6 +70,63 @@ export function CameraZoneViewPage() {
       });
     }, 3000);
     return () => window.clearInterval(timer);
+  }, [activeCameras]);
+
+  useEffect(() => {
+    const eligibleCameras = activeCameras.filter(
+      (camera) => camera.snapshot_url && (camera.assigned_feature_scope === "attendance" || camera.assigned_feature_scope === "both"),
+    );
+    if (!eligibleCameras.length) return;
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      eligibleCameras.forEach((camera) => {
+        if (autoBusyRef.current[camera.id]) return;
+        autoBusyRef.current[camera.id] = true;
+        setAutoStatus((current) => ({
+          ...current,
+          [camera.id]: { running: true, label: "Recognizing..." },
+        }));
+
+        void recognizeAndMarkCameraAttendance(camera.id)
+          .then((result: CameraFrameResult) => {
+            const recognized = result.recognition?.recognized ?? false;
+            const statusLabel = result.attendance
+              ? `Marked ${result.attendance.event.event_type.replaceAll("_", " ")}`
+              : recognized
+                ? `Recognized ${result.recognition?.employee_name ?? "employee"}`
+                : result.recognition?.recognition_status === "NO_FACE"
+                  ? "No face"
+                  : result.recognition?.recognition_status === "UNKNOWN"
+                    ? "Unknown face"
+                    : "No update";
+
+            setAutoStatus((current) => ({
+              ...current,
+              [camera.id]: {
+                running: false,
+                label: statusLabel,
+                updated_at: new Date().toISOString(),
+              },
+            }));
+          })
+          .catch((error) => {
+            setAutoStatus((current) => ({
+              ...current,
+              [camera.id]: {
+                running: false,
+                label: error instanceof Error ? error.message : "Recognition failed",
+                updated_at: new Date().toISOString(),
+              },
+            }));
+          })
+          .finally(() => {
+            autoBusyRef.current[camera.id] = false;
+          });
+      });
+    }, 5000);
+
+    return () => window.clearInterval(interval);
   }, [activeCameras]);
 
   function refreshCamera(cameraId: string) {
@@ -127,6 +195,12 @@ export function CameraZoneViewPage() {
                 )}
               </button>
               <p className="mt-3 text-xs text-slate-500">HTTP MJPEG and Phone IP Webcam streams preview directly. RTSP requires a browser-compatible gateway.</p>
+              {(camera.assigned_feature_scope === "attendance" || camera.assigned_feature_scope === "both") ? (
+                <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                  Auto recognition: {autoStatus[camera.id]?.running ? "running" : autoStatus[camera.id]?.label ?? "waiting"}
+                  {autoStatus[camera.id]?.updated_at ? ` | ${formatClockTime(autoStatus[camera.id].updated_at)}` : ""}
+                </div>
+              ) : null}
             </Card>
           );
         })}

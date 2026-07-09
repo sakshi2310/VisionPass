@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -25,15 +26,18 @@ from app.schemas.recognition import RecognitionBase64Request, RecognitionMode, R
 from app.services.audit_service import log_recognition_attempt
 from app.services.attendance_service import (
     AttendanceMarkError,
-    determine_next_attendance_event,
     list_today_attendance,
+    log_live_recognition_decision,
     mark_attendance,
+    process_camera_presence_recognition,
 )
 from app.services.face_ai_service import FaceModelUnavailableError, FaceValidationError
 from app.services.recognition_service import recognize_employee_face
+from app.services.camera_service import get_camera
 
 router = APIRouter(dependencies=[Depends(require_module("attendance"))])
 mode_adapter = TypeAdapter(RecognitionMode)
+logger = logging.getLogger(__name__)
 
 
 def _decode_base64_frame(frame: str) -> bytes:
@@ -114,11 +118,20 @@ def _failed_audit_result(recognition_status: str) -> dict:
     }
 
 
+def _camera_presence_state(db: Session, tenant_id: str, camera_id: str | None) -> tuple[bool, str | None, str | None]:
+    if not camera_id:
+        return True, None, None
+    camera = get_camera(db, tenant_id, camera_id)
+    if camera is None:
+        return False, None, None
+    return bool(camera.is_active), camera.id, camera.name
+
+
 def _attendance_response(result: dict) -> AttendanceMarkResponse:
     return AttendanceMarkResponse(
         event=AttendanceEventRead.model_validate(result["event"]),
         daily=DailyAttendanceRead.model_validate(result["daily"]),
-        employee_id=result["employee"].id,
+        employee_id=str(result["employee"].id),
         employee_name=result["employee"].full_name,
         employee_code=result["employee"].employee_code,
         message=result["message"],
@@ -328,6 +341,7 @@ async def recognize_and_mark_attendance(
     mode: RecognitionMode = "attendance"
     try:
         image_content, camera_id, mode = await _recognition_input(request)
+        camera_enabled, resolved_camera_id, _camera_name = _camera_presence_state(db, current_user.tenant_id, camera_id)
         recognition = recognize_employee_face(db, current_user.tenant_id, image_content)
     except HTTPException:
         log_recognition_attempt(
@@ -373,28 +387,44 @@ async def recognize_and_mark_attendance(
     )
     recognition_response = RecognitionResponse.model_validate(recognition)
     if not recognition["recognized"]:
+        log_live_recognition_decision(
+            camera_enabled=camera_enabled,
+            tenant_id=current_user.tenant_id,
+            camera_id=resolved_camera_id or camera_id,
+            frame_received=True,
+            face_detected=recognition["recognition_status"] != "NO_FACE",
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=recognition.get("confidence"),
+            decided_event=(
+                "no_face"
+                if recognition["recognition_status"] == "NO_FACE"
+                else "unknown_face"
+                if recognition["recognition_status"] == "UNKNOWN"
+                else "error"
+            ),
+            final_status="not_detected",
+            reason=(
+                "No face detected"
+                if recognition["recognition_status"] == "NO_FACE"
+                else "Unknown face detected"
+                if recognition["recognition_status"] == "UNKNOWN"
+                else "Face did not match"
+            ),
+        )
         return RecognizeAndMarkResponse(recognition=recognition_response, attendance=None)
 
-    employee_id = recognition["employee_id"]
     try:
-        event_type = determine_next_attendance_event(
+        presence = process_camera_presence_recognition(
             db,
             current_user.tenant_id,
-            employee_id,
-        )
-        marked = mark_attendance(
-            db,
-            current_user.tenant_id,
-            employee_id,
-            event_type=event_type,
-            source="camera" if camera_id else "web",
-            camera_id=camera_id,
+            employee_id=recognition["employee_id"],
+            employee_name=recognition.get("employee_name"),
             confidence=recognition["confidence"],
-            metadata={
-                "mode": mode,
-                "recognition_status": recognition["recognition_status"],
-                "recognition_distance": recognition["distance"],
-            },
+            recognition_status=recognition["recognition_status"],
+            camera_id=resolved_camera_id or camera_id,
+            camera_enabled=camera_enabled,
         )
     except AttendanceMarkError as exc:
         raise HTTPException(
@@ -407,5 +437,5 @@ async def recognize_and_mark_attendance(
         ) from exc
     return RecognizeAndMarkResponse(
         recognition=recognition_response,
-        attendance=_attendance_response(marked),
+        attendance=_attendance_response(presence["attendance"]) if presence["attendance"] is not None else None,
     )

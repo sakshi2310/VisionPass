@@ -2,18 +2,53 @@
 
 from __future__ import annotations
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.camera import CameraEvent
 from app.services.attendance_service import (
     AttendanceMarkError,
-    determine_next_attendance_event,
-    mark_attendance,
+    log_live_recognition_decision,
+    process_camera_presence_recognition,
 )
 from app.services.camera_service import CameraError, fetch_snapshot, get_camera
 from app.services.face_ai_service import FaceModelUnavailableError, FaceValidationError
 from app.services.recognition_service import recognize_employee_face
+
+logger = logging.getLogger(__name__)
+
+
+def _log_frame_decision(
+    *,
+    tenant_id: str,
+    camera_id: str | None,
+    camera_enabled: bool,
+    frame_received: bool,
+    face_detected: bool,
+    matched: bool,
+    employee_id: str | None,
+    employee_name: str | None,
+    confidence: float | None,
+    decided_event: str,
+    final_status: str,
+    reason: str,
+) -> None:
+    log_live_recognition_decision(
+        tenant_id=tenant_id,
+        camera_id=camera_id,
+        camera_enabled=camera_enabled,
+        frame_received=frame_received,
+        face_detected=face_detected,
+        matched=matched,
+        employee_id=employee_id,
+        employee_name=employee_name,
+        confidence=confidence,
+        decided_event=decided_event,
+        final_status=final_status,
+        reason=reason,
+    )
 
 
 def log_camera_event(
@@ -56,14 +91,56 @@ def process_camera_frame(
 
     camera = get_camera(db, tenant_id, camera_id)
     if camera is None:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera_id,
+            camera_enabled=False,
+            frame_received=False,
+            face_detected=False,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=None,
+            decided_event="error",
+            final_status="error",
+            reason="Camera not found",
+        )
         raise CameraError("CAMERA_NOT_FOUND", "Camera not found.", status_code=404)
     if not camera.is_active:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=False,
+            frame_received=False,
+            face_detected=False,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=None,
+            decided_event="error",
+            final_status="error",
+            reason="Camera is inactive",
+        )
         raise CameraError("CAMERA_INACTIVE", "Camera is inactive.", status_code=409)
 
     event_type = "attendance_recognition" if mark else "face_recognition" if recognize else "frame_processed"
     try:
         snapshot = fetch_snapshot(db, camera)
     except CameraError as exc:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=bool(camera.is_active),
+            frame_received=True,
+            face_detected=False,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=None,
+            decided_event="error",
+            final_status="error",
+            reason=exc.message,
+        )
         log_camera_event(
             db,
             tenant_id=tenant_id,
@@ -101,6 +178,23 @@ def process_camera_frame(
     try:
         recognition = recognize_employee_face(db, tenant_id, snapshot["content"])
     except FaceValidationError as exc:
+        metrics = getattr(exc, "metrics", {}) or {}
+        face_detected = exc.code not in {"NO_FACE_DETECTED"}
+        decided_event = "no_face" if exc.code == "NO_FACE_DETECTED" else "error"
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=bool(camera.is_active),
+            frame_received=True,
+            face_detected=face_detected,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=metrics.get("detection_confidence"),
+            decided_event=decided_event,
+            final_status="not_detected",
+            reason=exc.message,
+        )
         log_camera_event(
             db,
             tenant_id=tenant_id,
@@ -111,6 +205,20 @@ def process_camera_frame(
         )
         raise
     except FaceModelUnavailableError:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=bool(camera.is_active),
+            frame_received=True,
+            face_detected=False,
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=None,
+            decided_event="error",
+            final_status="error",
+            reason="Face model unavailable",
+        )
         log_camera_event(
             db,
             tenant_id=tenant_id,
@@ -121,26 +229,50 @@ def process_camera_frame(
         )
         raise
     attendance = None
+    attendance_decision = None
+    attendance_reason = None
+    if not recognition["recognized"]:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=bool(camera.is_active),
+            frame_received=True,
+            face_detected=recognition["recognition_status"] != "NO_FACE",
+            matched=False,
+            employee_id=None,
+            employee_name=None,
+            confidence=recognition.get("confidence"),
+            decided_event=(
+                "no_face"
+                if recognition["recognition_status"] == "NO_FACE"
+                else "unknown_face"
+                if recognition["recognition_status"] == "UNKNOWN"
+                else "error"
+            ),
+            final_status="not_detected",
+            reason=(
+                "No face detected"
+                if recognition["recognition_status"] == "NO_FACE"
+                else "Unknown face detected"
+                if recognition["recognition_status"] == "UNKNOWN"
+                else "Face did not match"
+            ),
+        )
     if mark and recognition["recognized"]:
         try:
-            attendance_event_type = determine_next_attendance_event(
+            presence = process_camera_presence_recognition(
                 db,
                 tenant_id,
-                recognition["employee_id"],
-            )
-            attendance = mark_attendance(
-                db,
-                tenant_id,
-                recognition["employee_id"],
-                event_type=attendance_event_type,
-                source="camera",
-                camera_id=camera.id,
+                employee_id=recognition["employee_id"],
+                employee_name=recognition.get("employee_name"),
                 confidence=recognition["confidence"],
-                metadata={
-                    "recognition_status": recognition["recognition_status"],
-                    "recognition_distance": recognition["distance"],
-                },
+                recognition_status=recognition["recognition_status"],
+                camera_id=camera.id,
+                camera_enabled=camera.is_active,
             )
+            attendance = presence["attendance"]
+            attendance_decision = presence["decision"]
+            attendance_reason = presence["reason"]
         except AttendanceMarkError as exc:
             log_camera_event(
                 db,
@@ -153,6 +285,21 @@ def process_camera_frame(
                 metadata={**frame_metadata, "attendance_error": exc.code},
             )
             raise
+    elif recognition["recognized"]:
+        _log_frame_decision(
+            tenant_id=tenant_id,
+            camera_id=camera.id,
+            camera_enabled=bool(camera.is_active),
+            frame_received=True,
+            face_detected=True,
+            matched=True,
+            employee_id=recognition["employee_id"],
+            employee_name=recognition.get("employee_name"),
+            confidence=recognition["confidence"],
+            decided_event="check_in",
+            final_status="recognized",
+            reason="Face matched; attendance event not requested.",
+        )
 
     camera_event = log_camera_event(
         db,
@@ -166,9 +313,10 @@ def process_camera_frame(
             **frame_metadata,
             "distance": recognition["distance"],
             "threshold": recognition["threshold"],
-            "attendance_event_type": (
-                attendance["event"].event_type if attendance is not None else None
-            ),
+            "attendance_event_type": attendance["event"].event_type if attendance is not None else None,
+            "attendance_status": attendance["daily"].status if attendance is not None else None,
+            "attendance_decision": attendance_decision,
+            "attendance_reason": attendance_reason,
         },
     )
     return {

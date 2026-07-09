@@ -1,5 +1,5 @@
 import { Camera, CheckCircle2, Clock3, Loader2, RefreshCw, ScanFace, ShieldCheck, UserX } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -25,6 +25,20 @@ type ToastState = {
   message: string;
 } | null;
 
+function formatTime(value?: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(new Date(value));
+}
+
+function frameStatusTone(status?: string | null) {
+  if (status === "online") return "success" as const;
+  if (status === "unknown") return "neutral" as const;
+  return "danger" as const;
+}
+
 export function LiveRecognitionPage() {
   const [cameras, setCameras] = useState<CameraRecord[]>([]);
   const [cameraId, setCameraId] = useState("");
@@ -34,6 +48,7 @@ export function LiveRecognitionPage() {
   const [action, setAction] = useState<Action | null>(null);
   const [cooldown, setCooldown] = useState(0);
   const [toast, setToast] = useState<ToastState>(null);
+  const autoBusyRef = useRef(false);
 
   usePageTitle("Vision Pass | Live Recognition");
 
@@ -56,21 +71,64 @@ export function LiveRecognitionPage() {
   }, []);
 
   useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (!action) {
+        void loadCameras();
+      }
+    }, 15000);
+    return () => window.clearInterval(interval);
+  }, [action]);
+
+  useEffect(() => {
     if (cooldown <= 0) return;
     const timer = window.setInterval(() => setCooldown((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
   }, [cooldown]);
+
+  const selectedCamera = useMemo(
+    () => cameras.find((camera) => camera.id === cameraId) ?? null,
+    [cameraId, cameras],
+  );
+
+  useEffect(() => {
+    if (!selectedCamera?.is_active || !selectedCamera.snapshot_url) return;
+
+    const runRecognition = () => {
+      if (document.visibilityState !== "visible") return;
+      if (autoBusyRef.current) return;
+
+      autoBusyRef.current = true;
+      void (async () => {
+        try {
+          const response = await recognizeAndMarkCameraAttendance(cameraId);
+          setResult(response);
+          setCooldown(response.frame.frame_interval_seconds);
+          await updatePreview(cameraId);
+          await loadCameras();
+        } catch (error) {
+          setToast({
+            tone: "error",
+            title: "Auto recognition failed",
+            message: error instanceof Error ? error.message : "Unable to process live camera frame.",
+          });
+        } finally {
+          autoBusyRef.current = false;
+        }
+      })();
+    };
+
+    runRecognition();
+    const timer = window.setInterval(runRecognition, 5000);
+
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cameraId, selectedCamera?.id, selectedCamera?.is_active, selectedCamera?.snapshot_url]);
 
   useEffect(() => {
     return () => {
       if (preview) URL.revokeObjectURL(preview);
     };
   }, [preview]);
-
-  const selectedCamera = useMemo(
-    () => cameras.find((camera) => camera.id === cameraId) ?? null,
-    [cameraId, cameras],
-  );
 
   async function updatePreview(selectedId: string) {
     const blob = await fetchCameraSnapshot(selectedId);
@@ -102,6 +160,10 @@ export function LiveRecognitionPage() {
         });
       } else if (response.recognition?.recognized) {
         setToast({ tone: "success", title: "Employee recognized", message: response.recognition.employee_name ?? "Matched employee." });
+      } else if (response.recognition?.recognition_status === "NO_FACE") {
+        setToast({ tone: "error", title: "No face detected", message: "No employee attendance was changed." });
+      } else if (response.recognition?.recognition_status === "UNKNOWN") {
+        setToast({ tone: "error", title: "Unknown face detected", message: "No employee attendance was changed." });
       } else if (nextAction === "capture") {
         setToast({ tone: "success", title: "Frame captured", message: `${response.frame.width} × ${response.frame.height} image validated.` });
       }
@@ -114,6 +176,7 @@ export function LiveRecognitionPage() {
   }
 
   const controlsDisabled = loading || action !== null || cooldown > 0 || !cameraId;
+  const selectedCameraLabel = selectedCamera ? `${selectedCamera.name} · ${selectedCamera.location}` : "Select camera";
 
   return (
     <div className="grid gap-6">
@@ -124,7 +187,9 @@ export function LiveRecognitionPage() {
             <h1 className="mt-2 text-3xl font-semibold text-white">Process live camera frames</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Capture a validated frame, recognize an enrolled employee, or recognize and mark attendance in one step.</p>
           </div>
-          <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadCameras()} disabled={loading || action !== null}>Refresh cameras</Button>
+          <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadCameras()} disabled={loading || action !== null}>
+            Refresh cameras
+          </Button>
         </div>
       </section>
 
@@ -144,11 +209,26 @@ export function LiveRecognitionPage() {
               >
                 <option value="">Select camera</option>
                 {cameras.filter((camera) => camera.is_active && camera.snapshot_url).map((camera) => (
-                  <option key={camera.id} value={camera.id}>{camera.name} — {camera.location}</option>
+                  <option key={camera.id} value={camera.id}>{camera.name} - {camera.location}</option>
                 ))}
               </select>
             </label>
-            {selectedCamera ? <Badge tone={selectedCamera.health_status === "online" ? "success" : selectedCamera.health_status === "unknown" ? "neutral" : "danger"}>{selectedCamera.health_status}</Badge> : null}
+            {selectedCamera ? <Badge tone={frameStatusTone(selectedCamera.health_status)}>{selectedCamera.health_status}</Badge> : null}
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+              <div className="text-xs uppercase tracking-wider text-slate-500">Camera</div>
+              <div className="mt-2 font-semibold text-slate-900 dark:text-white">{selectedCameraLabel}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+              <div className="text-xs uppercase tracking-wider text-slate-500">Enabled</div>
+              <div className="mt-2 font-semibold text-slate-900 dark:text-white">{selectedCamera?.is_active ? "Enabled" : "Disabled"}</div>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
+              <div className="text-xs uppercase tracking-wider text-slate-500">Last frame</div>
+              <div className="mt-2 font-semibold text-slate-900 dark:text-white">{formatTime(selectedCamera?.last_seen_at)}</div>
+            </div>
           </div>
 
           <div className="grid aspect-video place-items-center overflow-hidden rounded-3xl bg-slate-950">
@@ -179,15 +259,31 @@ export function LiveRecognitionPage() {
               {result.attendance ? (
                 <div className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
                   <div className="text-xs uppercase tracking-wider text-slate-500">Attendance</div>
-                  <div className="mt-2 font-semibold capitalize">{result.attendance.event.event_type.replace("_", " ")} · {result.attendance.daily.status.replace("_", " ")}</div>
+                  <div className="mt-2 font-semibold capitalize">{result.attendance.event.event_type.replaceAll("_", " ")} · {result.attendance.daily.status.replaceAll("_", " ")}</div>
                   <div className="mt-1 text-sm text-slate-500">{result.attendance.message}</div>
                 </div>
-              ) : null}
+              ) : (
+                <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+                  <div className="font-semibold text-slate-900 dark:text-white">Employee recognized, no attendance event created</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    {String(result.camera_event.metadata?.attendance_reason ?? "Already checked in today")}
+                  </div>
+                </div>
+              )}
             </div>
           ) : result.recognition ? (
             <div className="flex gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
               <UserX className="h-6 w-6 text-amber-500" />
-              <div><div className="font-semibold">{result.recognition.recognition_status.replaceAll("_", " ")}</div><div className="mt-1 text-sm text-slate-500">No employee attendance was changed.</div></div>
+              <div>
+                <div className="font-semibold">
+                  {result.recognition.recognition_status === "NO_FACE"
+                    ? "No face detected"
+                    : result.recognition.recognition_status === "UNKNOWN"
+                      ? "Unknown face detected"
+                      : result.recognition.recognition_status.replaceAll("_", " ")}
+                </div>
+                <div className="mt-1 text-sm text-slate-500">No employee attendance was changed.</div>
+              </div>
             </div>
           ) : (
             <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
@@ -195,7 +291,12 @@ export function LiveRecognitionPage() {
               <div className="mt-1 text-sm text-slate-500">{result.frame.width} × {result.frame.height} · {result.frame.content_type}</div>
             </div>
           )}
-          {result ? <div className="text-xs text-slate-500">Event: {result.camera_event.event_type} · {result.camera_event.recognition_status}</div> : null}
+          {result ? (
+            <div className="text-xs text-slate-500">
+              Event: {result.camera_event.event_type} · {result.camera_event.recognition_status}
+              {result.camera_event.metadata?.attendance_status ? ` · ${String(result.camera_event.metadata.attendance_status).replaceAll("_", " ")}` : ""}
+            </div>
+          ) : null}
         </Card>
       </div>
 

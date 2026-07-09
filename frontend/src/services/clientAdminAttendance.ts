@@ -183,30 +183,99 @@ export type TodayAttendanceItem = DailyAttendance & {
 
 export type AttendanceBoardStatus = "present" | "late" | "half_day" | "absent" | "holiday" | "not_detected";
 
+export type AttendanceLiveCameraStatus = {
+  camera_id?: string | null;
+  camera_name?: string | null;
+  enabled: boolean;
+  health_status: string;
+  last_frame_at?: string | null;
+};
+
 export type AttendanceBoardEmployee = {
   employee_id: string;
   employee_code: string;
   employee_name: string;
-  email: string;
-  department?: string | null;
-  designation?: string | null;
+  status: AttendanceBoardStatus;
+  check_in_time?: string | null;
+  check_out_time?: string | null;
+  work_minutes: number;
+  latest_source?: string | null;
+  reason?: string | null;
+  last_seen_time?: string | null;
+  latest_event_time?: string | null;
+  latest_event_type?: string | null;
   shift_id?: string | null;
   shift_name?: string | null;
-  status: AttendanceBoardStatus;
+  email?: string | null;
+  department?: string | null;
+  designation?: string | null;
   first_seen_at?: string | null;
   last_seen_at?: string | null;
-  total_present_minutes: number;
-  total_absent_minutes: number;
-  sessions_count: number;
-  latest_event_type?: string | null;
+  total_present_minutes?: number;
+  total_absent_minutes?: number;
+  sessions_count?: number;
+  latest_event_source?: string | null;
   latest_confidence?: number | null;
+  attendance_message?: string | null;
+};
+
+export type AttendanceLatestSession = {
+  event_id: string;
+  employee_id: string;
+  employee_code: string;
+  employee_name: string;
+  event_type: string;
+  source?: string | null;
+  event_time: string;
+  camera_id?: string | null;
+  camera_name?: string | null;
+  confidence?: number | null;
+  metadata: Record<string, unknown>;
+};
+
+export type AttendanceBoardDebugSummary = {
+  tenant_id: string;
+  selected_date: string;
+  total_active_employees: number;
+  present_count: number;
+  absent_count: number;
+  not_detected_count: number;
+  holiday_count: number;
+  latest_event_time?: string | null;
+  active_attendance_camera_count: number;
+  camera_enabled: boolean;
+  last_camera_frame_time?: string | null;
+  last_recognition_result?: string | null;
+  unknown_face_count: number;
+  no_face_count: number;
 };
 
 export type AttendanceBoardResponse = {
   attendance_date: string;
   generated_at: string;
-  stats: Record<AttendanceBoardStatus | "total", number>;
-  employees: AttendanceBoardEmployee[];
+  present_employees: AttendanceBoardEmployee[];
+  absent_employees: AttendanceBoardEmployee[];
+  latest_sessions: AttendanceLatestSession[];
+  presence_sessions?: AttendancePresenceSession[];
+  debug_summary: AttendanceBoardDebugSummary;
+  employees?: AttendanceBoardEmployee[];
+  stats?: Record<string, number>;
+  live_camera_status?: AttendanceLiveCameraStatus | null;
+};
+
+export type AttendancePresenceSession = {
+  id: string;
+  tenant_id: string;
+  employee_id: string;
+  attendance_date: string;
+  session_type: "present" | "absent";
+  started_at: string;
+  ended_at?: string | null;
+  latest_source?: string | null;
+  camera_id?: string | null;
+  reason?: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 export type AttendanceSession = {
@@ -241,6 +310,7 @@ export type EmployeeAttendanceSummary = {
   };
   summary: AttendanceBoardEmployee | null;
   sessions: AttendanceSession[];
+  presence_sessions?: AttendancePresenceSession[];
   detection_history: AttendanceDetectionHistory[];
 };
 
