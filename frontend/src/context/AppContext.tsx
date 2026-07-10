@@ -25,8 +25,16 @@ import {
   signup as signupRequest,
 } from "@/services/auth";
 import { adminApi } from "@/services/admin";
-import { clearStoredUserModuleKeys, getUserWorkspaceDashboard, loadStoredUserModuleKeys } from "@/services/userWorkspace";
+import { clearStoredUserModuleKeys } from "@/services/userWorkspace";
 import type { FeatureRule, ModuleKey, Tenant, ThemeMode, User } from "@/types";
+
+const MODULE_ALIASES: Partial<Record<ModuleKey, ModuleKey>> = {
+  visitor_management: "visitor_unknown",
+};
+
+function canonicalModuleKey(moduleKey: ModuleKey) {
+  return MODULE_ALIASES[moduleKey] ?? moduleKey;
+}
 
 type AppContextValue = {
   authReady: boolean;
@@ -41,6 +49,7 @@ type AppContextValue = {
   logout: () => Promise<void>;
   setTheme: (theme: ThemeMode) => void;
   setCurrentTenantId: (tenantId: string) => void;
+  refreshSession: () => Promise<User | null>;
   toggleTenantModule: (tenantId: string, moduleKey: ModuleKey, enabled: boolean) => void;
   updateTenant: (tenantId: string, patch: Partial<Tenant>) => void;
   createRule: (rule: Omit<FeatureRule, "id" | "createdAt" | "updatedAt">) => FeatureRule;
@@ -60,7 +69,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const raw = localStorage.getItem("visionpass-feature-rules");
     return raw ? (JSON.parse(raw) as FeatureRule[]) : [];
   });
-  const [userModuleKeys, setUserModuleKeys] = useState<string[]>(() => loadStoredUserModuleKeys());
+  const [userModuleKeys, setUserModuleKeys] = useState<string[]>([]);
   const [currentTenantId, setCurrentTenantIdState] = useState<string>(() => {
     return loadStoredTenantId() ?? "";
   });
@@ -126,6 +135,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const currentUser = currentSession?.user ?? null;
       setUser(currentUser);
+      setUserModuleKeys(currentSession?.features ?? []);
       if (currentUser) {
         setCurrentTenantIdState(currentUser.tenantId || "");
         if (currentUser.role === "SUPER_ADMIN") {
@@ -180,24 +190,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      if (user.role !== "TENANT_USER") {
-        clearStoredUserModuleKeys();
-        if (!cancelled) {
-          setUserModuleKeys([]);
-        }
-        return;
-      }
-
       try {
-        const dashboard = await getUserWorkspaceDashboard();
+        const session = await getCurrentSession();
         if (cancelled) return;
-        const moduleKeys = dashboard.features
-          .map((feature) => feature.module_key ?? feature.feature_code)
-          .filter((moduleKey): moduleKey is string => Boolean(moduleKey));
-        setUserModuleKeys(moduleKeys);
+        setUserModuleKeys(session?.features ?? []);
       } catch {
         if (!cancelled) {
-          setUserModuleKeys(loadStoredUserModuleKeys());
+          setUserModuleKeys([]);
         }
       }
     }
@@ -224,6 +223,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       login: async (email, password) => {
         const session = await loginRequest(email, password);
         setUser(session.user);
+        setUserModuleKeys(session.features ?? []);
         setCurrentTenantIdState(session.user.tenantId || "");
         if (session.user.role === "SUPER_ADMIN") {
           try {
@@ -244,6 +244,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       signup: async (fullName, email, organizationName, password) => {
         const session = await signupRequest(fullName, email, organizationName, password);
         setUser(session.user);
+        setUserModuleKeys(session.features ?? []);
         setCurrentTenantIdState(session.user.tenantId || "");
         if (session.user.role === "SUPER_ADMIN") {
           try {
@@ -276,15 +277,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
       },
       setTheme: setThemeState,
       setCurrentTenantId: setCurrentTenantIdState,
+      refreshSession: async () => {
+        const session = await getCurrentSession();
+        const currentUser = session?.user ?? null;
+        setUser(currentUser);
+        setUserModuleKeys(session?.features ?? []);
+        if (!currentUser) {
+          setTenants([]);
+          setCurrentTenantIdState("");
+          return null;
+        }
+        setCurrentTenantIdState(currentUser.tenantId || "");
+        if (currentUser.role === "SUPER_ADMIN") {
+          await loadAdminTenants();
+        } else if (session?.tenant) {
+          setTenants((current) => {
+            const nextTenant = session.tenant as Tenant;
+            const filtered = current.filter((tenant) => tenant.id !== nextTenant.id);
+            return [nextTenant, ...filtered];
+          });
+          setCurrentTenantIdState(session.tenant.id);
+        }
+        return currentUser;
+      },
       toggleTenantModule: (tenantId, moduleKey, enabled) => {
+        const canonical = canonicalModuleKey(moduleKey);
         setTenants((prev) =>
           prev.map((tenant) =>
             tenant.id === tenantId
               ? {
                   ...tenant,
                   enabledModules: enabled
-                    ? Array.from(new Set([...tenant.enabledModules, moduleKey]))
-                    : tenant.enabledModules.filter((module) => module !== moduleKey),
+                    ? Array.from(new Set([...tenant.enabledModules.filter((module) => canonicalModuleKey(module as ModuleKey) !== canonical), canonical]))
+                    : tenant.enabledModules.filter((module) => canonicalModuleKey(module as ModuleKey) !== canonical),
                 }
               : tenant,
           ),
@@ -312,13 +337,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         );
       },
       hasModule: (moduleKey) => {
-        const commonModules = new Set(["camera_management", "live_feed", "reports"]);
+        const commonModules = new Set(["camera_management", "live_feed", "reports", "alerts"]);
         if (commonModules.has(moduleKey)) return true;
-        if (!currentTenant) return false;
-        if (user?.role === "TENANT_USER") {
-          return userModuleKeys.includes(moduleKey);
-        }
-        return currentTenant.enabledModules.includes(moduleKey);
+        if (!user) return false;
+        if (user.role === "SUPER_ADMIN") return true;
+        const canonical = canonicalModuleKey(moduleKey);
+        return userModuleKeys.some((key) => canonicalModuleKey(key as ModuleKey) === canonical);
       },
     }),
     [authReady, currentTenant, featureRules, tenants, theme, user, userModuleKeys],

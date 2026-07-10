@@ -70,6 +70,7 @@ export function Tenants() {
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [featureError, setFeatureError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive' | 'suspended'>('all');
   const [page, setPage] = useState(1);
@@ -107,10 +108,22 @@ export function Tenants() {
   async function loadTenants() {
     try {
       setError('');
+      setFeatureError('');
       setRefreshing(true);
-      const [tenantResponse, featureResponse] = await Promise.all([adminApi.listTenants(), adminApi.listFeatures()]);
-      setTenants(tenantResponse);
-      setFeatures(featureResponse.features);
+      const [tenantResult, featureResult] = await Promise.allSettled([adminApi.listTenants(), adminApi.listFeatures()]);
+
+      if (tenantResult.status === 'fulfilled') {
+        setTenants(tenantResult.value);
+      } else {
+        setError(tenantResult.reason instanceof Error ? tenantResult.reason.message : 'Unable to load tenants.');
+      }
+
+      if (featureResult.status === 'fulfilled') {
+        setFeatures(featureResult.value.features);
+      } else {
+        setFeatureError(featureResult.reason instanceof Error ? featureResult.reason.message : 'Unable to load features.');
+        setFeatures([]);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to load tenants.');
     } finally {
@@ -245,6 +258,7 @@ export function Tenants() {
       </section>
 
       {error ? <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div> : null}
+      {featureError ? <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">{featureError}</div> : null}
 
       <section className="grid gap-4 rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-soft backdrop-blur dark:border-white/10 dark:bg-slate-950/75 lg:grid-cols-[1fr_auto] lg:items-end">
         <Input label="Search tenant" placeholder="Company, email, phone" value={search} onChange={(event) => setSearch(event.target.value)} leftIcon={<Search className="h-4 w-4" />} />

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import secrets
 
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,31 @@ def list_tenant_users(db: Session, tenant_id: str) -> list[User]:
     )
 
 
+def get_tenant_user_by_email(db: Session, tenant_id: str, email: str) -> User | None:
+    normalized_email = email.lower().strip()
+    return (
+        db.query(User)
+        .filter(
+            User.tenant_id == tenant_id,
+            User.email == normalized_email,
+            User.is_deleted.is_(False),
+        )
+        .one_or_none()
+    )
+
+
+def get_tenant_user_by_employee_id(db: Session, tenant_id: str, employee_id: str) -> User | None:
+    return (
+        db.query(User)
+        .filter(
+            User.tenant_id == tenant_id,
+            User.employee_id == employee_id.strip(),
+            User.is_deleted.is_(False),
+        )
+        .one_or_none()
+    )
+
+
 def get_tenant_user(db: Session, tenant_id: str, user_id: str) -> User | None:
     return (
         db.query(User)
@@ -49,6 +75,10 @@ def get_tenant_user(db: Session, tenant_id: str, user_id: str) -> User | None:
         )
         .one_or_none()
     )
+
+
+def _generate_temporary_password() -> str:
+    return f"VP-{secrets.token_hex(6).upper()}"
 
 
 def create_tenant_user(
@@ -68,6 +98,7 @@ def create_tenant_user(
     is_active: bool = True,
     face_enrolled: bool = False,
     notes: str | None = None,
+    commit: bool = True,
 ) -> User:
     normalized_role = normalize_tenant_role(role)
     normalized_email = email.lower().strip()
@@ -97,10 +128,72 @@ def create_tenant_user(
         status="active" if is_active else "inactive",
     )
     db.add(user)
-    db.commit()
-    db.refresh(user)
+    db.flush()
+    if commit:
+        db.commit()
+        db.refresh(user)
     logger.info(f'OK TENANT USER CREATED -- ID: {user.id} | Name: "{user.full_name}"')
     return user
+
+
+def sync_attendance_employee_user(
+    db: Session,
+    tenant_id: str,
+    *,
+    employee_id: str,
+    full_name: str,
+    email: str,
+    phone: str | None = None,
+    department: str | None = None,
+    designation: str | None = None,
+    is_active: bool = True,
+    created_by: User | None = None,
+) -> tuple[User, str | None]:
+    normalized_employee_id = employee_id.strip()
+    normalized_email = email.lower().strip()
+    linked_user = get_tenant_user_by_employee_id(db, tenant_id, normalized_employee_id)
+    if linked_user is None:
+        linked_user = get_tenant_user_by_email(db, tenant_id, normalized_email)
+
+    temporary_password: str | None = None
+    if linked_user is None:
+        temporary_password = _generate_temporary_password()
+        linked_user = create_tenant_user(
+            db,
+            tenant_id,
+            created_by=created_by,
+            full_name=full_name,
+            email=normalized_email,
+            password=temporary_password,
+            phone=phone,
+            role="user",
+            department=department,
+            designation=designation,
+            employee_id=normalized_employee_id,
+            is_active=is_active,
+            face_enrolled=False,
+            commit=False,
+        )
+        return linked_user, temporary_password
+
+    if normalize_tenant_role(linked_user.role) != "user":
+        raise ValueError("Attendance members must use a user account")
+
+    existing_email_owner = get_tenant_user_by_email(db, tenant_id, normalized_email)
+    if existing_email_owner is not None and existing_email_owner.id != linked_user.id:
+        raise ValueError("Email already exists")
+
+    linked_user.full_name = full_name.strip()
+    linked_user.email = normalized_email
+    linked_user.phone = phone.strip() if phone else None
+    linked_user.department = department.strip() if department else None
+    linked_user.designation = designation.strip() if designation else None
+    linked_user.employee_id = normalized_employee_id
+    linked_user.is_active = is_active
+    linked_user.status = "active" if is_active else "inactive"
+    linked_user.updated_at = datetime.now(timezone.utc)
+    db.add(linked_user)
+    return linked_user, temporary_password
 
 
 def update_tenant_user(
@@ -120,6 +213,7 @@ def update_tenant_user(
     is_active: bool | None = None,
     face_enrolled: bool | None = None,
     notes: str | None = None,
+    commit: bool = True,
 ) -> User | None:
     user = get_tenant_user(db, tenant_id, user_id)
     if user is None:
@@ -162,8 +256,9 @@ def update_tenant_user(
         user.notes = notes.strip() or None
 
     user.updated_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(user)
+    if commit:
+        db.commit()
+        db.refresh(user)
     logger.info(f'OK TENANT USER UPDATED -- ID: {user.id} | Active: {user.is_active}')
     return user
 

@@ -24,6 +24,7 @@ import {
   updateEmployee,
   uploadFaceImages,
   type AttendanceShift,
+  type EmployeeCreateResponse,
   type Employee,
   type EmployeePayload,
 } from "@/services/clientAdminAttendance";
@@ -142,7 +143,7 @@ export function EmployeeListPage() {
     [faceFiles],
   );
 
-  usePageTitle("Vision Pass | Employees");
+  usePageTitle("Vision Pass | Attendance Members");
 
   const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
 
@@ -208,6 +209,16 @@ export function EmployeeListPage() {
     }
   }, [employees, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (searchParams.get("create") !== "1") return;
+    openCreate();
+    setSearchParams((current) => {
+      current.delete("create");
+      return current;
+    }, { replace: true });
+  }, [loading, searchParams, setSearchParams, shifts]);
+
   const departments = useMemo(() => Array.from(new Set(employees.map((employee) => employee.department).filter(Boolean) as string[])), [employees]);
 
   useEffect(() => () => {
@@ -272,14 +283,17 @@ export function EmployeeListPage() {
     setFormError("");
     const wasCreate = mode === "create";
     let savedEmployee: Employee | null = null;
+    let portalAccount: EmployeeCreateResponse["portal_account"] | null = null;
 
     try {
       const payload = toPayload(draft);
-      savedEmployee = wasCreate
+      const result = wasCreate
         ? await createEmployee(payload)
         : activeEmployee
           ? await updateEmployee(activeEmployee.id, payload)
           : null;
+      savedEmployee = result?.employee ?? null;
+      portalAccount = result?.portal_account ?? null;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unable to save employee.";
       if (message.toLowerCase().includes("email")) setFormErrors((current) => ({ ...current, email: message }));
@@ -304,6 +318,13 @@ export function EmployeeListPage() {
       setSummary((current) => current ? { ...current, total_employees: current.total_employees + 1 } : current);
     }
     window.dispatchEvent(new CustomEvent("visionpass:employees-changed"));
+
+    const successParts = [
+      faceFiles.length > 0 ? `${savedEmployee.full_name} was saved and face enrollment completed.` : `${savedEmployee.full_name} was saved successfully.`,
+    ];
+    if (portalAccount?.created && portalAccount.temporary_password) {
+      successParts.push(`Portal login created for ${portalAccount.email}. Temporary password: ${portalAccount.temporary_password}`);
+    }
 
     if (faceFiles.length > 0) {
       try {
@@ -339,9 +360,7 @@ export function EmployeeListPage() {
     setToast({
       tone: "success",
       title: wasCreate ? "Employee ready" : "Employee updated",
-      message: faceFiles.length > 0
-        ? `${savedEmployee.full_name} was saved and face enrollment completed.`
-        : "Employee profile was saved successfully.",
+      message: successParts.join(" "),
     });
     closeModal();
     setSaving(false);
@@ -392,7 +411,7 @@ export function EmployeeListPage() {
             <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Employee management</p>
             <h1 className="mt-2 text-3xl font-semibold text-white">Employees for {currentTenant.name}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Manage tenant employees and move them into face enrollment without exposing any technical model controls.
+              Manage attendance-tracked members and move them into face enrollment without exposing any technical model controls.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -400,7 +419,7 @@ export function EmployeeListPage() {
               {refreshing ? "Refreshing..." : "Refresh"}
             </Button>
             <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate} disabled={saving}>
-              Add employee
+              Add member
             </Button>
           </div>
         </div>
@@ -516,19 +535,19 @@ export function EmployeeListPage() {
 
       <Modal
         open={mode !== null}
-        title={mode === "create" ? "Add employee" : "Edit employee"}
-        description={mode === "create" ? "Name, email, and clear face photosâ€”that is all you need to get started." : "Update the employee profile or replace face photos."}
+        title={mode === "create" ? "Add member" : "Edit member"}
+        description={mode === "create" ? "Name, email, and clear face photosâ€”that is all you need to get started." : "Update the member profile or replace face photos."}
         onClose={closeModal}
         className="max-w-3xl"
         footer={
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {mode === "create" ? "Employee ID and sensible defaults are added automatically." : `Employee ID: ${draft.employee_code}`}
+              {mode === "create" ? "Member ID and sensible defaults are added automatically." : `Member ID: ${draft.employee_code}`}
             </p>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={closeModal}>Cancel</Button>
               <Button type="submit" form="employee-form" leftIcon={saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} disabled={saving}>
-                {saving ? "Saving..." : mode === "create" ? "Create & enroll" : "Save employee"}
+                {saving ? "Saving..." : mode === "create" ? "Create & enroll" : "Save member"}
               </Button>
             </div>
           </div>

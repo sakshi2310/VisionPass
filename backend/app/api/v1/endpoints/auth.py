@@ -24,8 +24,8 @@ from app.services.auth_service import (
     change_user_password,
     has_super_admin,
     issue_login_token,
+    list_user_features,
 )
-from app.services.feature_flag_service import list_enabled_member_modules, list_enabled_modules
 
 router = APIRouter()
 logger = get_logger("auth")
@@ -83,13 +83,7 @@ def login(
 
     access_token = issue_login_token(user)
     role = str(user.role).strip().lower()
-    features = (
-        []
-        if role == "super_admin"
-        else list_enabled_modules(db, user.tenant_id)
-        if role in {"tenant_admin", "client_admin"}
-        else list_enabled_member_modules(db, user.tenant_id, user.id)
-    )
+    features = list_user_features(db, user)
     logger.info(f'OK LOGIN SUCCESS -- User: "{user.full_name}" (ID: {user.id}) | Role: {build_display_role(user.role)}')
     return AuthResponse(
         token=TokenResponse(access_token=access_token),
@@ -105,12 +99,7 @@ def signup() -> dict[str, str]:
 
 
 def _features_for_user(db: Session, user) -> list[str]:
-    role = str(user.role).strip().lower()
-    if role == "super_admin":
-        return []
-    if role in {"tenant_admin", "client_admin"}:
-        return list_enabled_modules(db, user.tenant_id)
-    return list_enabled_member_modules(db, user.tenant_id, user.id)
+    return list_user_features(db, user)
 
 
 @router.get("/me", response_model=UserRead)

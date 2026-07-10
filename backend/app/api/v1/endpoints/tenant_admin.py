@@ -20,9 +20,11 @@ from app.services.tenant_admin_service import (
     create_tenant_admin_member,
     delete_tenant_admin_member,
     get_tenant_admin_dashboard_summary,
+    get_tenant_admin_member,
     list_tenant_admin_features,
     list_tenant_admin_members,
     list_tenant_member_features,
+    serialize_tenant_admin_member,
     update_tenant_admin_member,
 )
 
@@ -43,7 +45,24 @@ def get_members(
     current_admin: User = Depends(get_current_tenant_admin),
 ) -> TenantAdminMemberListResponse:
     members = list_tenant_admin_members(db, current_admin.tenant_id)
-    return TenantAdminMemberListResponse(members=[TenantAdminMemberRead.model_validate(member) for member in members])
+    return TenantAdminMemberListResponse(
+        members=[
+            TenantAdminMemberRead.model_validate(serialize_tenant_admin_member(db, current_admin.tenant_id, member))
+            for member in members
+        ]
+    )
+
+
+@router.get('/members/{member_id}', response_model=TenantAdminMemberRead)
+def get_member(
+    member_id: str,
+    db: Session = Depends(database_session),
+    current_admin: User = Depends(get_current_tenant_admin),
+) -> TenantAdminMemberRead:
+    member = get_tenant_admin_member(db, current_admin.tenant_id, member_id)
+    if member is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Member not found')
+    return TenantAdminMemberRead.model_validate(serialize_tenant_admin_member(db, current_admin.tenant_id, member))
 
 
 @router.post('/members', response_model=TenantAdminMemberRead, status_code=status.HTTP_201_CREATED)
@@ -61,11 +80,11 @@ def create_member(
             password=payload.password,
             role=payload.role,
             status=payload.status,
-            feature_codes=payload.feature_codes,
+            feature_codes=payload.assigned_features,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return TenantAdminMemberRead.model_validate(member)
+    return TenantAdminMemberRead.model_validate(serialize_tenant_admin_member(db, current_admin.tenant_id, member))
 
 
 @router.patch('/members/{member_id}', response_model=TenantAdminMemberRead)
@@ -85,13 +104,13 @@ def update_member(
             password=payload.password,
             role=payload.role,
             status=payload.status,
-            feature_codes=payload.feature_codes,
+            feature_codes=payload.assigned_features,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Member not found')
-    return TenantAdminMemberRead.model_validate(member)
+    return TenantAdminMemberRead.model_validate(serialize_tenant_admin_member(db, current_admin.tenant_id, member))
 
 
 @router.delete('/members/{member_id}', status_code=status.HTTP_204_NO_CONTENT)
@@ -112,7 +131,7 @@ def get_member_features(
     current_admin: User = Depends(get_current_tenant_admin),
 ) -> TenantAdminMemberFeatureCodesResponse:
     return TenantAdminMemberFeatureCodesResponse(
-        feature_codes=list_tenant_member_features(db, current_admin.tenant_id, member_id),
+        assigned_features=list_tenant_member_features(db, current_admin.tenant_id, member_id),
     )
 
 
@@ -128,14 +147,14 @@ def update_member_features(
             db,
             current_admin.tenant_id,
             member_id,
-            feature_codes=payload.feature_codes,
+            feature_codes=payload.assigned_features,
         )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail='Member not found')
     return TenantAdminMemberFeatureCodesResponse(
-        feature_codes=list_tenant_member_features(db, current_admin.tenant_id, member_id),
+        assigned_features=list_tenant_member_features(db, current_admin.tenant_id, member_id),
     )
 
 

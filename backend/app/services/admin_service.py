@@ -28,13 +28,13 @@ def build_tenant_code(slug: str) -> str:
     return "-".join(parts)[:12]
 
 
-def get_primary_admin(db: Session, tenant_id: str) -> User | None:
-    return (
-        db.query(User)
-        .filter(User.tenant_id == tenant_id, User.role == "tenant_admin", User.is_deleted.is_(False))
-        .order_by(User.created_at.asc())
-        .one_or_none()
-    )
+def get_primary_admin(db: Session, tenant_id: str) -> User | None:
+    return (
+        db.query(User)
+        .filter(User.tenant_id == tenant_id, User.role == "tenant_admin", User.is_deleted.is_(False))
+        .order_by(User.created_at.asc())
+        .first()
+    )
 
 
 def _tenant_payload(db: Session, tenant: Tenant) -> dict:

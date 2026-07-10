@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 
-from sqlalchemy import and_, func
+from sqlalchemy import and_, func, literal
 from sqlalchemy.orm import Session
 
 from app.models.access_event import AccessLog
 from app.models.attendance import AttendanceEvent, DailyAttendanceRecord
 from app.models.camera import Camera, CameraEvent
 from app.models.employee import AttendanceEmployee
+from app.models.person_detection import PersonDetection
 from app.models.visitor import Visitor, VisitorVisit
 
 
@@ -139,49 +140,151 @@ def visitor_report(
     employee_id: str | None = None,
     status: str | None = None,
     camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
 ) -> list[dict]:
     query = (
-        db.query(Visitor, VisitorVisit, AttendanceEmployee)
-        .outerjoin(
-            VisitorVisit,
-            and_(VisitorVisit.visitor_id == Visitor.id, VisitorVisit.tenant_id == tenant_id),
-        )
-        .outerjoin(
-            AttendanceEmployee,
-            and_(AttendanceEmployee.id == Visitor.host_employee_id, AttendanceEmployee.tenant_id == tenant_id),
-        )
-        .filter(Visitor.tenant_id == tenant_id)
+        db.query(VisitorVisit, Visitor, Camera, PersonDetection)
+        .join(Visitor, and_(Visitor.id == VisitorVisit.visitor_id, Visitor.tenant_id == tenant_id))
+        .outerjoin(Camera, and_(Camera.id == VisitorVisit.camera_id, Camera.tenant_id == tenant_id))
+        .outerjoin(PersonDetection, and_(PersonDetection.id == VisitorVisit.person_detection_id, PersonDetection.tenant_id == tenant_id))
+        .filter(VisitorVisit.tenant_id == tenant_id)
     )
-    range_column = func.coalesce(VisitorVisit.check_in_time, Visitor.created_at)
+    range_column = VisitorVisit.seen_at
     query = _apply_datetime_range(query, range_column, start_date, end_date)
     if employee_id:
-        query = query.filter(Visitor.host_employee_id == employee_id)
+        query = query.filter(Visitor.id == employee_id)
     if status:
         query = query.filter(Visitor.status == status.strip().lower())
     if camera_id:
-        access_match = db.query(AccessLog.id).filter(
-            AccessLog.tenant_id == tenant_id,
-            AccessLog.visitor_id == Visitor.id,
-            AccessLog.camera_id == camera_id,
-        )
-        query = query.filter(access_match.exists())
+        query = query.filter(VisitorVisit.camera_id == camera_id)
+    if zone_id:
+        query = query.filter(VisitorVisit.zone_id == zone_id)
+    if match_type:
+        query = query.filter(func.coalesce(PersonDetection.match_type, literal("visitor")) == match_type)
     rows = query.order_by(range_column.desc()).all()
     return [
         {
-            "id": visit.id if visit else visitor.id,
+            "id": visit.id,
             "visitor_id": visitor.id,
             "full_name": visitor.full_name,
+            "phone": visitor.phone,
             "company": visitor.company,
             "purpose": visitor.purpose,
-            "host_employee_id": visitor.host_employee_id,
-            "host_employee_name": host.full_name if host else None,
             "status": visitor.status,
-            "access_status": visit.access_status if visit else None,
-            "check_in_time": visit.check_in_time if visit else None,
-            "check_out_time": visit.check_out_time if visit else None,
+            "match_type": detection.match_type if detection is not None else "visitor",
+            "access_status": visit.access_status,
+            "camera_id": camera.id if camera else visit.camera_id,
+            "camera_name": camera.name if camera else None,
+            "zone_id": visit.zone_id,
+            "seen_at": visit.seen_at,
+            "snapshot_url": visit.snapshot_url,
+            "check_in_time": visit.check_in_time,
+            "check_out_time": visit.check_out_time,
+            "note": detection.note if detection else visit.notes,
+            "image_path": visit.image_path,
+            "first_seen_at": visitor.first_seen_at,
+            "last_seen_at": visitor.last_seen_at,
+            "total_visits": visitor.total_visits,
             "created_at": visitor.created_at,
         }
-        for visitor, visit, host in rows
+        for visit, visitor, camera, detection in rows
+    ]
+
+
+def person_detection_report(
+    db: Session,
+    tenant_id: str,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    query = (
+        db.query(PersonDetection, Camera)
+        .join(Camera, and_(Camera.id == PersonDetection.camera_id, Camera.tenant_id == tenant_id))
+        .filter(PersonDetection.tenant_id == tenant_id)
+    )
+    query = _apply_datetime_range(query, PersonDetection.detected_at, start_date, end_date)
+    if camera_id:
+        query = query.filter(PersonDetection.camera_id == camera_id)
+    if zone_id:
+        query = query.filter(PersonDetection.zone_id == zone_id)
+    if match_type:
+        query = query.filter(PersonDetection.match_type == match_type)
+    if status:
+        query = query.filter(PersonDetection.status == status.strip().lower())
+    rows = query.order_by(PersonDetection.detected_at.desc(), PersonDetection.created_at.desc()).all()
+    return [
+        {
+            "id": detection.id,
+            "detected_at": detection.detected_at,
+            "camera_id": camera.id,
+            "camera_name": camera.name,
+            "zone_id": detection.zone_id,
+            "match_type": detection.match_type,
+            "status": detection.status,
+            "note": detection.note,
+            "matched_staff_id": detection.matched_staff_id,
+            "matched_visitor_id": detection.matched_visitor_id,
+            "image_path": detection.image_path,
+            "created_at": detection.created_at,
+            "updated_at": detection.updated_at,
+        }
+        for detection, camera in rows
+    ]
+
+
+def unknown_review_report(
+    db: Session,
+    tenant_id: str,
+    *,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+) -> list[dict]:
+    query = (
+        db.query(PersonDetection, Camera)
+        .join(Camera, and_(Camera.id == PersonDetection.camera_id, Camera.tenant_id == tenant_id))
+        .filter(
+            PersonDetection.tenant_id == tenant_id,
+            PersonDetection.match_type == "unknown",
+            PersonDetection.note.isnot(None),
+        )
+    )
+    query = _apply_datetime_range(query, PersonDetection.detected_at, start_date, end_date)
+    if camera_id:
+        query = query.filter(PersonDetection.camera_id == camera_id)
+    if zone_id:
+        query = query.filter(PersonDetection.zone_id == zone_id)
+    if match_type:
+        query = query.filter(PersonDetection.match_type == match_type)
+    if status:
+        query = query.filter(PersonDetection.status == status.strip().lower())
+    else:
+        query = query.filter(PersonDetection.status.in_(["new", "reviewed"]))
+    rows = query.order_by(PersonDetection.detected_at.desc(), PersonDetection.created_at.desc()).all()
+    return [
+        {
+            "id": detection.id,
+            "detected_at": detection.detected_at,
+            "camera_id": camera.id,
+            "camera_name": camera.name,
+            "zone_id": detection.zone_id,
+            "note": detection.note,
+            "status": detection.status,
+            "match_type": detection.match_type,
+            "image_path": detection.image_path,
+            "created_at": detection.created_at,
+            "updated_at": detection.updated_at,
+        }
+        for detection, camera in rows
     ]
 
 

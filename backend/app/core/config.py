@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     face_model_name: str = Field(default="buffalo_l", min_length=1)
     face_detection_confidence: float = Field(default=0.60, ge=0, le=1)
     face_recognition_threshold: float = Field(default=0.45, ge=0, le=1)
-    face_enrollment_min_quality: float = Field(default=0.70, ge=0, le=1)
+    face_enrollment_min_quality: float = Field(default=0.62, ge=0, le=1)
     face_duplicate_threshold: float = Field(default=0.40, ge=0, le=1)
 
     access_confidence_threshold: float = Field(default=0.65, ge=0, le=1)

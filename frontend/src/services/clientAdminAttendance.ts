@@ -97,6 +97,19 @@ export type Employee = {
   updated_at: string;
 };
 
+export type EmployeePortalAccount = {
+  user_id: string;
+  email: string;
+  role: string;
+  temporary_password?: string | null;
+  created: boolean;
+};
+
+export type EmployeeCreateResponse = {
+  employee: Employee;
+  portal_account?: EmployeePortalAccount | null;
+};
+
 export type EmployeeFaceProfile = {
   id: string;
   tenant_id: string;
@@ -482,9 +495,9 @@ export type FaceSettingsPayload = {
 
 type AttendanceShiftListResponse = { shifts: AttendanceShift[] };
 type AttendanceHolidayListResponse = { holidays: AttendanceHoliday[] };
-type EmployeeListResponse = { employees: Employee[] };
-type EmployeeFaceImageListResponse = { images: EmployeeFaceImage[] };
-type EmployeeFaceEmbeddingListResponse = { embeddings: EmployeeFaceEmbedding[] };
+export type EmployeeListResponse = { employees: Employee[] };
+export type EmployeeFaceImageListResponse = { images: EmployeeFaceImage[] };
+export type EmployeeFaceEmbeddingListResponse = { embeddings: EmployeeFaceEmbedding[] };
 export type EmployeeFaceEnrollmentResponse = {
   profile: EmployeeFaceProfile;
   images: EmployeeFaceImage[];
@@ -683,14 +696,14 @@ export async function fetchEmployees(params?: { search?: string; department?: st
 }
 
 export function createEmployee(payload: EmployeePayload) {
-  return requestJson<Employee>("/api/client-admin/attendance/employees", {
+  return requestJson<EmployeeCreateResponse>("/api/client-admin/attendance/employees", {
     method: "POST",
     body: JSON.stringify(payload),
   });
 }
 
 export function updateEmployee(employeeId: string, payload: EmployeeUpdatePayload) {
-  return requestJson<Employee>(`/api/client-admin/attendance/employees/${employeeId}`, {
+  return requestJson<EmployeeCreateResponse>(`/api/client-admin/attendance/employees/${employeeId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

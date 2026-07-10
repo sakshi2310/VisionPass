@@ -7,7 +7,7 @@ from app.core.dependencies import database_session
 from app.core.logger import get_logger
 from app.schemas.auth import AuthResponse, LoginRequest, TokenResponse
 from app.schemas.user import UserRead
-from app.services.auth_service import authenticate_tenant_user_login, issue_login_token
+from app.services.auth_service import authenticate_tenant_user_login, issue_login_token, list_user_features
 
 router = APIRouter()
 logger = get_logger("user_auth")
@@ -35,4 +35,5 @@ def login(payload: LoginRequest, db: Session = Depends(database_session)) -> Aut
         token=TokenResponse(access_token=access_token, token_type="bearer"),
         user=UserRead.model_validate(user),
         tenant=tenant,
+        features=list_user_features(db, user),
     )

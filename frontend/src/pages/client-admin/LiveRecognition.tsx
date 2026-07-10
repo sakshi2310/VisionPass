@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Toast } from "@/components/ui/Toast";
+import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   fetchCameras,
@@ -25,8 +26,44 @@ type ToastState = {
   message: string;
 } | null;
 
+type WorkspaceCopy = {
+  pageTitle: string;
+  eyebrow: string;
+  heading: string;
+  description: string;
+  refreshLabel: string;
+  emptyStateTitle: string;
+  emptyStateDescription: string;
+  emptyCameraTitle: string;
+  emptyCameraDescription: string;
+};
+
+const liveRecognitionCopy: WorkspaceCopy = {
+  pageTitle: "Vision Pass | Live Recognition",
+  eyebrow: "Live recognition",
+  heading: "Process live camera frames",
+  description: "Capture a validated frame, recognize an enrolled employee, or recognize and mark attendance in one step.",
+  refreshLabel: "Refresh cameras",
+  emptyStateTitle: "No frame processed",
+  emptyStateDescription: "Choose an action to see recognition and attendance results.",
+  emptyCameraTitle: "No snapshot camera available",
+  emptyCameraDescription: "Configure an active IP Webcam snapshot URL in Camera Management first.",
+};
+
+const personDetectionCopy: WorkspaceCopy = {
+  pageTitle: "Vision Pass | Person Detection",
+  eyebrow: "Person detection",
+  heading: "Inspect live people on camera",
+  description: "Capture a frame, detect a person, recognize a known face, or mark attendance from the same camera feed.",
+  refreshLabel: "Refresh cameras",
+  emptyStateTitle: "No frame processed",
+  emptyStateDescription: "Choose an action to review the current person detection result.",
+  emptyCameraTitle: "No snapshot camera available",
+  emptyCameraDescription: "Configure an active IP Webcam snapshot URL in Camera Management first.",
+};
+
 function formatTime(value?: string | null) {
-  if (!value) return "—";
+  if (!value) return "-";
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",
     minute: "2-digit",
@@ -39,7 +76,8 @@ function frameStatusTone(status?: string | null) {
   return "danger" as const;
 }
 
-export function LiveRecognitionPage() {
+function CameraWorkspace({ copy }: { copy: WorkspaceCopy }) {
+  const { hasModule } = useApp();
   const [cameras, setCameras] = useState<CameraRecord[]>([]);
   const [cameraId, setCameraId] = useState("");
   const [result, setResult] = useState<CameraFrameResult | null>(null);
@@ -50,7 +88,7 @@ export function LiveRecognitionPage() {
   const [toast, setToast] = useState<ToastState>(null);
   const autoBusyRef = useRef(false);
 
-  usePageTitle("Vision Pass | Live Recognition");
+  usePageTitle(copy.pageTitle);
 
   async function loadCameras() {
     try {
@@ -91,6 +129,8 @@ export function LiveRecognitionPage() {
   );
 
   useEffect(() => {
+    if (!hasModule("attendance")) return;
+
     if (!selectedCamera?.is_active || !selectedCamera.snapshot_url) return;
 
     const runRecognition = () => {
@@ -122,7 +162,7 @@ export function LiveRecognitionPage() {
 
     return () => window.clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cameraId, selectedCamera?.id, selectedCamera?.is_active, selectedCamera?.snapshot_url]);
+  }, [cameraId, hasModule, selectedCamera?.id, selectedCamera?.is_active, selectedCamera?.snapshot_url]);
 
   useEffect(() => {
     return () => {
@@ -140,13 +180,18 @@ export function LiveRecognitionPage() {
       setToast({ tone: "error", title: "Select a camera", message: "Choose an active snapshot camera first." });
       return;
     }
+    if (nextAction === "mark" && !hasModule("attendance")) {
+      setToast({ tone: "error", title: "Attendance not enabled", message: "Attendance recognition is not assigned to this account." });
+      return;
+    }
     try {
       setAction(nextAction);
-      const response = nextAction === "capture"
-        ? await processCameraFrame(cameraId)
-        : nextAction === "recognize"
-          ? await recognizeCameraFrame(cameraId)
-          : await recognizeAndMarkCameraAttendance(cameraId);
+      const response =
+        nextAction === "capture"
+          ? await processCameraFrame(cameraId)
+          : nextAction === "recognize"
+            ? await recognizeCameraFrame(cameraId)
+            : await recognizeAndMarkCameraAttendance(cameraId);
       setResult(response);
       setCooldown(response.frame.frame_interval_seconds);
       await updatePreview(cameraId);
@@ -165,7 +210,7 @@ export function LiveRecognitionPage() {
       } else if (response.recognition?.recognition_status === "UNKNOWN") {
         setToast({ tone: "error", title: "Unknown face detected", message: "No employee attendance was changed." });
       } else if (nextAction === "capture") {
-        setToast({ tone: "success", title: "Frame captured", message: `${response.frame.width} × ${response.frame.height} image validated.` });
+        setToast({ tone: "success", title: "Frame captured", message: `${response.frame.width} x ${response.frame.height} image validated.` });
       }
     } catch (error) {
       setToast({ tone: "error", title: "Camera processing failed", message: error instanceof Error ? error.message : "Unable to process camera frame." });
@@ -176,19 +221,19 @@ export function LiveRecognitionPage() {
   }
 
   const controlsDisabled = loading || action !== null || cooldown > 0 || !cameraId;
-  const selectedCameraLabel = selectedCamera ? `${selectedCamera.name} · ${selectedCamera.location}` : "Select camera";
+  const selectedCameraLabel = selectedCamera ? `${selectedCamera.name} | ${selectedCamera.location}` : "Select camera";
 
   return (
     <div className="grid gap-6">
       <section className="surface-strong p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Live recognition</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Process live camera frames</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">Capture a validated frame, recognize an enrolled employee, or recognize and mark attendance in one step.</p>
+            <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">{copy.eyebrow}</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white">{copy.heading}</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">{copy.description}</p>
           </div>
           <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={() => void loadCameras()} disabled={loading || action !== null}>
-            Refresh cameras
+            {copy.refreshLabel}
           </Button>
         </div>
       </section>
@@ -246,7 +291,7 @@ export function LiveRecognitionPage() {
         <Card className="grid content-start gap-4 p-5">
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Latest result</h2>
           {!result ? (
-            <EmptyState title="No frame processed" description="Choose an action to see recognition and attendance results." action={<ScanFace className="h-6 w-6 text-slate-400" />} />
+            <EmptyState title={copy.emptyStateTitle} description={copy.emptyStateDescription} action={<ScanFace className="h-6 w-6 text-slate-400" />} />
           ) : result.recognition?.recognized ? (
             <div className="grid gap-4">
               <div className="flex gap-3 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
@@ -259,7 +304,7 @@ export function LiveRecognitionPage() {
               {result.attendance ? (
                 <div className="rounded-2xl bg-slate-50 p-4 dark:bg-white/5">
                   <div className="text-xs uppercase tracking-wider text-slate-500">Attendance</div>
-                  <div className="mt-2 font-semibold capitalize">{result.attendance.event.event_type.replaceAll("_", " ")} · {result.attendance.daily.status.replaceAll("_", " ")}</div>
+                  <div className="mt-2 font-semibold capitalize">{result.attendance.event.event_type.replaceAll("_", " ")} | {result.attendance.daily.status.replaceAll("_", " ")}</div>
                   <div className="mt-1 text-sm text-slate-500">{result.attendance.message}</div>
                 </div>
               ) : (
@@ -288,23 +333,31 @@ export function LiveRecognitionPage() {
           ) : (
             <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
               <div className="font-semibold">Frame captured</div>
-              <div className="mt-1 text-sm text-slate-500">{result.frame.width} × {result.frame.height} · {result.frame.content_type}</div>
+              <div className="mt-1 text-sm text-slate-500">{result.frame.width} x {result.frame.height} | {result.frame.content_type}</div>
             </div>
           )}
           {result ? (
             <div className="text-xs text-slate-500">
-              Event: {result.camera_event.event_type} · {result.camera_event.recognition_status}
-              {result.camera_event.metadata?.attendance_status ? ` · ${String(result.camera_event.metadata.attendance_status).replaceAll("_", " ")}` : ""}
+              Event: {result.camera_event.event_type} | {result.camera_event.recognition_status}
+              {result.camera_event.metadata?.attendance_status ? ` | ${String(result.camera_event.metadata.attendance_status).replaceAll("_", " ")}` : ""}
             </div>
           ) : null}
         </Card>
       </div>
 
       {cameras.filter((camera) => camera.is_active && camera.snapshot_url).length === 0 && !loading ? (
-        <Card className="p-5"><EmptyState title="No snapshot camera available" description="Configure an active IP Webcam snapshot URL in Camera Management first." action={<Camera className="h-6 w-6 text-slate-400" />} /></Card>
+        <Card className="p-5"><EmptyState title={copy.emptyCameraTitle} description={copy.emptyCameraDescription} action={<Camera className="h-6 w-6 text-slate-400" />} /></Card>
       ) : null}
 
       {toast ? <div className="fixed right-4 top-4 z-50"><Toast tone={toast.tone} title={toast.title} message={toast.message} onClose={() => setToast(null)} /></div> : null}
     </div>
   );
+}
+
+export function LiveRecognitionPage() {
+  return <CameraWorkspace copy={liveRecognitionCopy} />;
+}
+
+export function PersonDetectionPage() {
+  return <CameraWorkspace copy={personDetectionCopy} />;
 }

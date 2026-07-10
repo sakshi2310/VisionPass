@@ -8,6 +8,14 @@ function url(path: string) {
   return `${API_BASE}${path}`;
 }
 
+function normalizeRole(role: string): TenantAdminMember["role"] {
+  const canonical = role.trim().toUpperCase();
+  if (canonical === "TENANT_ADMIN" || canonical === "TENANT_USER") {
+    return canonical;
+  }
+  return "TENANT_USER";
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const token = loadStoredAccessToken();
   const response = await fetch(url(path), {
@@ -57,6 +65,7 @@ export type TenantAdminMember = {
   role: "TENANT_ADMIN" | "TENANT_USER";
   status: "active" | "inactive" | "suspended";
   is_active: boolean;
+  assigned_features: string[];
   created_at: string;
   updated_at: string;
 };
@@ -67,7 +76,7 @@ export type TenantAdminMemberPayload = {
   password?: string;
   role: "tenant_admin" | "user";
   status: "active" | "inactive" | "suspended";
-  feature_codes: string[];
+  assigned_features: string[];
 };
 
 type TenantAdminMemberListResponse = {
@@ -79,34 +88,43 @@ type TenantAdminFeatureListResponse = {
 };
 
 type TenantAdminMemberFeatureCodesResponse = {
-  feature_codes: string[];
+  assigned_features: string[];
 };
+
+function normalizeMember(raw: TenantAdminMember): TenantAdminMember {
+  return {
+    ...raw,
+    role: normalizeRole(raw.role),
+  };
+}
 
 export const tenantAdminApi = {
   getDashboardSummary: () => requestJson<TenantAdminDashboardSummary>("/api/tenant-admin/dashboard"),
-  listMembers: () => requestJson<TenantAdminMemberListResponse>("/api/tenant-admin/members").then((response) => response.members),
+  listMembers: () =>
+    requestJson<TenantAdminMemberListResponse>("/api/tenant-admin/members").then((response) => response.members.map(normalizeMember)),
+  getMember: (memberId: string) => requestJson<TenantAdminMember>(`/api/tenant-admin/members/${memberId}`).then(normalizeMember),
   createMember: (payload: TenantAdminMemberPayload) =>
     requestJson<TenantAdminMember>("/api/tenant-admin/members", {
       method: "POST",
       body: JSON.stringify(payload),
-    }),
+    }).then(normalizeMember),
   updateMember: (memberId: string, payload: Partial<TenantAdminMemberPayload>) =>
     requestJson<TenantAdminMember>(`/api/tenant-admin/members/${memberId}`, {
       method: "PATCH",
       body: JSON.stringify(payload),
-    }),
+    }).then(normalizeMember),
   deleteMember: (memberId: string) =>
     requestJson<void>(`/api/tenant-admin/members/${memberId}`, {
       method: "DELETE",
     }),
   listMemberFeatures: async (memberId: string) => {
     const response = await requestJson<TenantAdminMemberFeatureCodesResponse>(`/api/tenant-admin/members/${memberId}/features`);
-    return response.feature_codes;
+    return response.assigned_features;
   },
   updateMemberFeatures: (memberId: string, featureCodes: string[]) =>
     requestJson<TenantAdminMemberFeatureCodesResponse>(`/api/tenant-admin/members/${memberId}/features`, {
       method: "PUT",
-      body: JSON.stringify({ feature_codes: featureCodes }),
-    }).then((response) => response.feature_codes),
+      body: JSON.stringify({ assigned_features: featureCodes }),
+    }).then((response) => response.assigned_features),
   listFeatures: () => requestJson<TenantAdminFeatureListResponse>("/api/tenant-admin/features").then((response) => response.features),
 };

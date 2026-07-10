@@ -27,6 +27,7 @@ from app.schemas.attendance import (
 )
 from app.schemas.employee import (
     EmployeeCreate,
+    EmployeeCreateResponse,
     EmployeeFaceEmbeddingListResponse,
     EmployeeFaceEmbeddingRead,
     EmployeeFaceEnrollmentResponse,
@@ -36,6 +37,7 @@ from app.schemas.employee import (
     EmployeeFaceProfileRead,
     EmployeeListResponse,
     EmployeeRead,
+    EmployeePortalAccountRead,
     EmployeeStatusUpdate,
     EmployeeUpdate,
     FaceImageValidationResult,
@@ -71,6 +73,7 @@ from app.services.employee_service import (
     get_or_create_face_settings,
     list_employees,
     re_enroll_employee,
+    sync_employee_portal_account,
     update_employee,
     update_face_settings,
 )
@@ -349,12 +352,12 @@ def read_employees(
     return EmployeeListResponse(employees=[EmployeeRead.model_validate(employee) for employee in employees])
 
 
-@router.post("/employees", response_model=EmployeeRead, status_code=status.HTTP_201_CREATED)
+@router.post("/employees", response_model=EmployeeCreateResponse, status_code=status.HTTP_201_CREATED)
 def add_employee(
     payload: EmployeeCreate,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
-) -> EmployeeRead:
+) -> EmployeeCreateResponse:
     try:
         employee = create_employee(
             db,
@@ -371,10 +374,33 @@ def add_employee(
             joining_date=payload.joining_date,
             employee_type=payload.employee_type,
             is_active=payload.is_active,
+            commit=False,
         )
+        portal_user, temporary_password = sync_employee_portal_account(
+            db,
+            current_admin.tenant_id,
+            employee,
+            created_by=current_admin,
+        )
+        db.commit()
+        db.refresh(employee)
+        db.refresh(portal_user)
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return EmployeeRead.model_validate(employee)
+    except Exception:
+        db.rollback()
+        raise
+    return EmployeeCreateResponse(
+        employee=EmployeeRead.model_validate(employee),
+        portal_account=EmployeePortalAccountRead(
+            user_id=portal_user.id,
+            email=portal_user.email,
+            role=portal_user.role,
+            temporary_password=temporary_password,
+            created=temporary_password is not None,
+        ),
+    )
 
 
 @router.get("/employees/{employee_id}", response_model=EmployeeRead)
@@ -389,13 +415,13 @@ def read_employee(
     return EmployeeRead.model_validate(employee)
 
 
-@router.put("/employees/{employee_id}", response_model=EmployeeRead)
+@router.put("/employees/{employee_id}", response_model=EmployeeCreateResponse)
 def save_employee(
     employee_id: str,
     payload: EmployeeUpdate,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
-) -> EmployeeRead:
+) -> EmployeeCreateResponse:
     try:
         employee = update_employee(
             db,
@@ -413,12 +439,35 @@ def save_employee(
             joining_date=payload.joining_date,
             employee_type=payload.employee_type,
             is_active=payload.is_active,
+            commit=False,
         )
+        if employee is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+        portal_user, temporary_password = sync_employee_portal_account(
+            db,
+            current_admin.tenant_id,
+            employee,
+            created_by=current_admin,
+        )
+        db.commit()
+        db.refresh(employee)
+        db.refresh(portal_user)
     except ValueError as exc:
+        db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    if employee is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
-    return EmployeeRead.model_validate(employee)
+    except Exception:
+        db.rollback()
+        raise
+    return EmployeeCreateResponse(
+        employee=EmployeeRead.model_validate(employee),
+        portal_account=EmployeePortalAccountRead(
+            user_id=portal_user.id,
+            email=portal_user.email,
+            role=portal_user.role,
+            temporary_password=temporary_password,
+            created=temporary_password is not None,
+        ),
+    )
 
 
 @router.patch("/employees/{employee_id}/activate", response_model=EmployeeRead)

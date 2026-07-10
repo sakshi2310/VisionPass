@@ -12,7 +12,7 @@ from app.services.feature_flag_service import list_enabled_modules
 
 FEATURE_ROUTE_MAP: dict[str, str] = {
     'attendance': '/dashboard/attendance',
-    'visitor_management': '/dashboard/visitors',
+    'visitor_unknown': '/dashboard/visitor-unknown/person-detection',
     'access_control': '/dashboard/access-control',
     'alerts': '/dashboard/alerts',
     'genai_assistant': '/dashboard/assistant',
@@ -21,7 +21,7 @@ FEATURE_ROUTE_MAP: dict[str, str] = {
 
 FEATURE_MODULE_KEY_MAP: dict[str, str] = {
     'attendance': 'attendance',
-    'visitor_management': 'visitor_classification',
+    'visitor_unknown': 'visitor_unknown',
     'access_control': 'access_control',
     'alerts': 'alerts',
     'genai_assistant': 'genai_assistant',

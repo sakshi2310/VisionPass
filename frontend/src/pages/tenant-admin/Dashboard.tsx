@@ -55,7 +55,7 @@ export function TenantAdminDashboard() {
   }, []);
 
   const cards = [
-    { label: 'Total Members', value: summary?.total_members ?? 0, icon: Users },
+    { label: 'Total Portal Users', value: summary?.total_members ?? 0, icon: Users },
     { label: 'Tenant Admins', value: summary?.tenant_admins ?? 0, icon: Building2 },
     { label: 'Users', value: summary?.users ?? 0, icon: Users },
     { label: 'Enabled Features', value: summary?.enabled_features ?? 0, icon: Sparkles },
@@ -121,10 +121,10 @@ export function TenantAdminDashboard() {
           <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Tenant Guardrails</h2>
           <div className="grid gap-3 text-sm text-slate-600 dark:text-slate-300">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30">
-              You only see members and features from your own tenant.
+              You only see portal users and features from your own tenant.
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30">
-              Tenant admins can manage members, but cannot create tenants.
+              Tenant admins can manage portal users, but cannot create tenants.
             </div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30">
               Role changes stay limited to tenant_admin and user.

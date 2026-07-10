@@ -1,6 +1,7 @@
 """Application bootstrap helpers and idempotent MVP demo data."""
 
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -11,12 +12,15 @@ from app.models.alert import Alert
 from app.models.attendance import AttendanceEvent, AttendanceHoliday, AttendanceShift, DailyAttendanceRecord
 from app.models.camera import Camera, CameraEvent
 from app.models.employee import AttendanceEmployee
+from app.models.employee import EmployeeFaceEmbedding, EmployeeFaceImage, EmployeeFaceProfile
+from app.models.person_detection import PersonDetection
 from app.models.super_admin import SuperAdmin
 from app.models.tenant import Tenant
 from app.models.tenant_feature import TenantFeature
 from app.models.tenant_member import TenantMember
 from app.models.member_feature import MemberFeature
 from app.models.visitor import Visitor, VisitorVisit
+from app.services.visitor_service import create_visitor, record_visitor_visit
 from app.services.cv_feature_service import list_active_feature_codes, seed_default_master_features
 from app.services.feature_flag_service import set_member_modules, set_tenant_modules
 from app.services.tenant_service import create_tenant
@@ -33,7 +37,7 @@ DEMO_TENANT_USER_PASSWORD = "User@123456"
 DEMO_FEATURE_CODES = [
     "face_recognition",
     "attendance",
-    "visitor_management",
+    "visitor_unknown",
     "live_feed",
     "reports",
     "intrusion_detection",
@@ -179,6 +183,100 @@ def _get_or_create_camera(
     return camera
 
 
+def _demo_face_image_paths() -> list[Path]:
+    base = Path(__file__).resolve().parents[2] / "visionpass" / "insightface" / "data" / "images"
+    return [
+        base / "Tom_Hanks_54745.png",
+        base / "t1.jpg",
+    ]
+
+
+def _synthetic_embedding(seed: int) -> list[float]:
+    vector = [0.0] * 512
+    vector[seed % 512] = 1.0
+    return vector
+
+
+def _ensure_face_enrollment(
+    db: Session,
+    *,
+    tenant_id: str,
+    employee: AttendanceEmployee,
+    image_path: Path,
+    embedding: list[float],
+) -> None:
+    if not image_path.is_file():
+        return
+    profile = (
+        db.query(EmployeeFaceProfile)
+        .filter(EmployeeFaceProfile.tenant_id == tenant_id, EmployeeFaceProfile.employee_id == employee.id)
+        .one_or_none()
+    )
+    if profile is None:
+        profile = EmployeeFaceProfile(
+            tenant_id=tenant_id,
+            employee_id=employee.id,
+            enrollment_status="Enrolled",
+            face_count=1,
+            embedding_count=1,
+            average_quality_score=0.98,
+            last_enrolled_at=datetime.now(DEMO_TIMEZONE),
+        )
+        db.add(profile)
+    else:
+        profile.enrollment_status = "Enrolled"
+        profile.face_count = max(int(profile.face_count or 0), 1)
+        profile.embedding_count = max(int(profile.embedding_count or 0), 1)
+        profile.average_quality_score = 0.98
+        profile.last_enrolled_at = datetime.now(DEMO_TIMEZONE)
+    face_image = (
+        db.query(EmployeeFaceImage)
+        .filter(EmployeeFaceImage.tenant_id == tenant_id, EmployeeFaceImage.employee_id == employee.id, EmployeeFaceImage.image_url == str(image_path))
+        .one_or_none()
+    )
+    if face_image is None:
+        face_image = EmployeeFaceImage(
+            tenant_id=tenant_id,
+            employee_id=employee.id,
+            image_url=str(image_path),
+            original_filename=image_path.name,
+            image_type=image_path.suffix.lstrip("."),
+            quality_score=0.98,
+            face_detected=True,
+            face_count=1,
+            validation_status="Validated",
+            validation_message=None,
+            embedding_generated=True,
+        )
+        db.add(face_image)
+        db.flush()
+    embedding_row = (
+        db.query(EmployeeFaceEmbedding)
+        .filter(EmployeeFaceEmbedding.tenant_id == tenant_id, EmployeeFaceEmbedding.employee_id == employee.id, EmployeeFaceEmbedding.is_active.is_(True))
+        .first()
+    )
+    if embedding_row is None:
+        db.add(
+            EmployeeFaceEmbedding(
+                tenant_id=tenant_id,
+                employee_id=employee.id,
+                face_image_id=face_image.id,
+                embedding=embedding,
+                embedding_model="demo-synthetic",
+                version="seed",
+                quality_score=0.98,
+                is_active=True,
+            )
+        )
+    else:
+        embedding_row.face_image_id = face_image.id
+        embedding_row.embedding = embedding
+        embedding_row.embedding_model = "demo-synthetic"
+        embedding_row.version = "seed"
+        embedding_row.quality_score = 0.98
+        embedding_row.is_active = True
+
+
 def _seed_attendance_day(
     db: Session,
     tenant_id: str,
@@ -253,7 +351,7 @@ def _seed_attendance_day(
             )
 
 
-def _seed_demo_operations(db: Session, tenant: Tenant) -> None:
+def _seed_demo_operations(db: Session, tenant: Tenant, *, actor_id: str) -> None:
     """Create realistic, non-biometric demo records without fake embeddings."""
 
     shift = _get_or_create_shift(db, tenant.id)
@@ -400,43 +498,151 @@ def _seed_demo_operations(db: Session, tenant: Tenant) -> None:
             )
         )
 
-    visitor = (
-        db.query(Visitor)
-        .filter(Visitor.tenant_id == tenant.id, Visitor.phone == "9876500001")
-        .one_or_none()
-    )
-    if visitor is None:
-        visitor = Visitor(
-            tenant_id=tenant.id,
-            full_name="Riya Kapoor",
-            phone="9876500001",
-            email="riya.kapoor@example.test",
-            company="Acme Services",
-            purpose="Vendor meeting",
-            host_employee_id=employees[1].id,
-            status="checked_in",
-        )
-        db.add(visitor)
-        db.flush()
-    visit = (
-        db.query(VisitorVisit)
+    face_images = [path for path in _demo_face_image_paths() if path.is_file()]
+    if len(face_images) >= 2:
+        _ensure_face_enrollment(db, tenant_id=tenant.id, employee=employees[0], image_path=face_images[0], embedding=_synthetic_embedding(11))
+        _ensure_face_enrollment(db, tenant_id=tenant.id, employee=employees[1], image_path=face_images[1], embedding=_synthetic_embedding(19))
+
+    staff_detection = (
+        db.query(PersonDetection)
         .filter(
-            VisitorVisit.tenant_id == tenant.id,
-            VisitorVisit.visitor_id == visitor.id,
-            VisitorVisit.check_in_time == recognition_time,
+            PersonDetection.tenant_id == tenant.id,
+            PersonDetection.match_type == "staff",
+            PersonDetection.matched_staff_id == employees[0].id,
         )
         .one_or_none()
     )
-    if visit is None:
+    if staff_detection is None:
         db.add(
-            VisitorVisit(
+            PersonDetection(
                 tenant_id=tenant.id,
-                visitor_id=visitor.id,
-                check_in_time=recognition_time,
-                access_status="granted",
-                notes="MVP demo visit",
+                camera_id=lobby_camera.id,
+                zone_id="lobby",
+                image_path=str(face_images[0]) if face_images else None,
+                detected_at=datetime.combine(today, time(9, 5), DEMO_TIMEZONE),
+                first_seen_at=datetime.combine(today, time(9, 5), DEMO_TIMEZONE),
+                last_seen_at=datetime.combine(today, time(9, 5), DEMO_TIMEZONE),
+                seen_count=1,
+                snapshot_quality_score=0.92,
+                face_embedding=_synthetic_embedding(11),
+                match_type="staff",
+                matched_staff_id=employees[0].id,
+                status="new",
             )
         )
+
+    unknown_note_detection = (
+        db.query(PersonDetection)
+        .filter(
+            PersonDetection.tenant_id == tenant.id,
+            PersonDetection.match_type == "unknown",
+            PersonDetection.note == "Delivery boy",
+        )
+        .one_or_none()
+    )
+    if unknown_note_detection is None:
+        db.add(
+            PersonDetection(
+                tenant_id=tenant.id,
+                camera_id=gate_camera.id,
+                zone_id="north_gate",
+                image_path=str(face_images[-1]) if face_images else None,
+                detected_at=datetime.combine(today, time(11, 20), DEMO_TIMEZONE),
+                first_seen_at=datetime.combine(today, time(11, 20), DEMO_TIMEZONE),
+                last_seen_at=datetime.combine(today, time(11, 20), DEMO_TIMEZONE),
+                seen_count=1,
+                snapshot_quality_score=0.83,
+                face_embedding=_synthetic_embedding(301),
+                match_type="unknown",
+                status="reviewed",
+                note="Delivery boy",
+            )
+        )
+
+    converted_detection = (
+        db.query(PersonDetection)
+        .filter(
+            PersonDetection.tenant_id == tenant.id,
+            PersonDetection.match_type == "visitor",
+            PersonDetection.status == "converted_to_visitor",
+        )
+        .one_or_none()
+    )
+    visitor = None
+    if converted_detection is None:
+        converted_detection = PersonDetection(
+            tenant_id=tenant.id,
+            camera_id=lobby_camera.id,
+            zone_id="lobby",
+            image_path=str(face_images[0]) if face_images else None,
+            detected_at=datetime.combine(today, time(12, 5), DEMO_TIMEZONE),
+            first_seen_at=datetime.combine(today, time(12, 5), DEMO_TIMEZONE),
+            last_seen_at=datetime.combine(today, time(12, 5), DEMO_TIMEZONE),
+            seen_count=1,
+            snapshot_quality_score=0.88,
+            face_embedding=_synthetic_embedding(77),
+            match_type="unknown",
+            status="new",
+        )
+        db.add(converted_detection)
+        db.flush()
+        visitor = create_visitor(
+            db,
+            tenant.id,
+            actor_id,
+            {
+                "name": "Anaya Verma",
+                "phone": "9876500099",
+                "purpose": "Vendor onboarding",
+                "status": "active",
+                "notes": "Converted from unknown detection",
+                "image_path": converted_detection.image_path,
+                "face_embedding": converted_detection.face_embedding,
+            },
+            commit=False,
+        )
+        first_visit = record_visitor_visit(
+            db,
+            visitor,
+            seen_at=converted_detection.detected_at,
+            person_detection_id=converted_detection.id,
+            camera_id=converted_detection.camera_id,
+            zone_id=converted_detection.zone_id,
+            image_path=converted_detection.image_path,
+            commit=False,
+        )
+        converted_detection.matched_visitor_id = visitor.id
+        converted_detection.status = "converted_to_visitor"
+        converted_detection.match_type = "visitor"
+        db.add_all([converted_detection, visitor, first_visit])
+    else:
+        visitor = (
+            db.query(Visitor)
+            .filter(Visitor.tenant_id == tenant.id, Visitor.id == converted_detection.matched_visitor_id)
+            .one_or_none()
+        )
+
+    if visitor is not None:
+        second_visit = (
+            db.query(VisitorVisit)
+            .filter(
+                VisitorVisit.tenant_id == tenant.id,
+                VisitorVisit.visitor_id == visitor.id,
+                VisitorVisit.person_detection_id.is_(None),
+            )
+            .one_or_none()
+        )
+        if second_visit is None:
+            record_visitor_visit(
+                db,
+                visitor,
+                seen_at=datetime.combine(today, time(15, 10), DEMO_TIMEZONE),
+                camera_id=gate_camera.id,
+                zone_id="north_gate",
+                image_path=str(face_images[-1]) if face_images else None,
+                notes="Afternoon follow-up visit",
+                commit=False,
+            )
 
     alert = (
         db.query(Alert)
@@ -532,4 +738,4 @@ def seed_default_admin(db: Session, *, include_operational_data: bool = True) ->
     set_member_modules(db, tenant.id, tenant_admin.id, tenant_feature_codes, updated_by=tenant_admin.id)
     set_member_modules(db, tenant.id, tenant_user.id, user_feature_codes, updated_by=tenant_admin.id)
     if include_operational_data:
-        _seed_demo_operations(db, tenant)
+        _seed_demo_operations(db, tenant, actor_id=tenant_admin.id)

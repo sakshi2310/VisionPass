@@ -2,6 +2,7 @@ import type { ModuleKey } from "@/types";
 
 export const FEATURE_KEYS = {
   attendance: "attendance",
+  visitorUnknown: "visitor_unknown",
   objectDetection: "object_detection",
 } as const satisfies Record<string, ModuleKey>;
 
@@ -23,6 +24,16 @@ export const featureRegistry = {
       "attendance_live",
       "attendance_logs",
       "attendance_reports",
+    ],
+  },
+  visitorUnknown: {
+    label: "Visitor + Unknown",
+    moduleKey: FEATURE_KEYS.visitorUnknown,
+    features: [
+      "person_detection",
+      "visitors",
+      "unknown_review",
+      "visitor_reports",
     ],
   },
   objectDetection: {

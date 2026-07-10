@@ -16,6 +16,7 @@ LOW_IMAGE_QUALITY = "LOW_IMAGE_QUALITY"
 INVALID_IMAGE = "INVALID_IMAGE"
 DUPLICATE_FACE_DETECTED = "DUPLICATE_FACE_DETECTED"
 logger = logging.getLogger(__name__)
+MAX_DETECTION_SIDE = 1280
 
 
 @dataclass(frozen=True)
@@ -102,6 +103,25 @@ def _decode_image(content: bytes):
     return image
 
 
+def _prepare_detection_image(image):
+    """Downscale oversized images for faster face detection while preserving aspect ratio."""
+
+    import cv2
+
+    height, width = image.shape[:2]
+    max_side = max(width, height)
+    if max_side <= MAX_DETECTION_SIDE:
+        return image, 1.0
+
+    scale = MAX_DETECTION_SIDE / float(max_side)
+    resized = cv2.resize(
+        image,
+        (int(round(width * scale)), int(round(height * scale))),
+        interpolation=cv2.INTER_AREA,
+    )
+    return resized, scale
+
+
 def analyze_face_image(
     content: bytes,
     *,
@@ -143,15 +163,18 @@ def analyze_face_image(
         )
     # This legacy database field is named max_blur_score, but stores the
     # minimum acceptable Laplacian variance: larger values are sharper.
-    if blur_score < min_sharpness_score:
+    # Allow slightly soft images so one mildly blurry photo does not reject the whole set.
+    required_sharpness = min_sharpness_score * 0.8
+    if blur_score < required_sharpness:
         raise FaceValidationError(
             LOW_IMAGE_QUALITY,
             "The face image is blurry. Hold the camera steady and try again.",
             blur_score=round(blur_score, 2),
         )
 
+    detection_image, scale = _prepare_detection_image(image)
     detector = analyzer or _get_face_analyzer()
-    faces = detector.get(image)
+    faces = detector.get(detection_image)
     if not faces:
         raise FaceValidationError(NO_FACE_DETECTED, "No face was detected in the image.")
     if len(faces) > 1:
@@ -170,7 +193,7 @@ def analyze_face_image(
             detection_confidence=round(confidence, 4),
         )
 
-    x1, y1, x2, y2 = (int(round(float(value))) for value in face.bbox)
+    x1, y1, x2, y2 = (int(round(float(value) / scale)) for value in face.bbox)
     face_width = max(0, x2 - x1)
     face_height = max(0, y2 - y1)
     face_size = min(face_width, face_height)
@@ -239,6 +262,100 @@ def analyze_face_image(
         blur_score=blur_score,
         brightness=brightness,
     )
+
+
+def detect_faces_in_image(
+    content: bytes,
+    *,
+    min_resolution_width: int,
+    min_resolution_height: int,
+    min_face_size_px: int,
+    min_sharpness_score: float,
+    min_brightness: float,
+    max_brightness: float,
+    analyzer=None,
+) -> list[FaceAnalysisResult]:
+    """Detect every visible face in an image without enforcing single-face enrollment rules."""
+
+    import cv2
+    import numpy as np
+
+    if not content:
+        raise FaceValidationError(INVALID_IMAGE, "The uploaded image is empty.")
+
+    image = _decode_image(content)
+    height, width = image.shape[:2]
+    if width < min_resolution_width or height < min_resolution_height:
+        raise FaceValidationError(
+            LOW_IMAGE_QUALITY,
+            f"Image resolution must be at least {min_resolution_width} x {min_resolution_height}.",
+            width=width,
+            height=height,
+        )
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    brightness = float(np.mean(gray))
+    blur_score = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+    detector = analyzer or _get_face_analyzer()
+    detection_image, scale = _prepare_detection_image(image)
+    faces = detector.get(detection_image)
+    results: list[FaceAnalysisResult] = []
+    for face in faces:
+        confidence = float(face.det_score)
+        x1, y1, x2, y2 = (int(round(float(value) / scale)) for value in face.bbox)
+        face_width = max(0, x2 - x1)
+        face_height = max(0, y2 - y1)
+        face_size = min(face_width, face_height)
+        raw_embedding = getattr(face, "normed_embedding", None)
+        if raw_embedding is None:
+            raw_embedding = getattr(face, "embedding", None)
+        if raw_embedding is None:
+            continue
+        embedding_array = np.asarray(raw_embedding, dtype=np.float32).reshape(-1)
+        if len(embedding_array) != 512:
+            continue
+        embedding_norm = float(np.linalg.norm(embedding_array))
+        if not np.isfinite(embedding_norm) or embedding_norm <= 1e-12:
+            continue
+        embedding = (embedding_array / embedding_norm).tolist()
+
+        sharpness_quality = min(blur_score / max(min_sharpness_score * 4, 1.0), 1.0)
+        face_size_quality = min(face_size / max(min_face_size_px * 2, 1), 1.0)
+        resolution_quality = min(
+            width / max(min_resolution_width * 2, 1),
+            height / max(min_resolution_height * 2, 1),
+            1.0,
+        )
+        brightness_midpoint = (min_brightness + max_brightness) / 2
+        brightness_radius = max((max_brightness - min_brightness) / 2, 1.0)
+        brightness_quality = max(
+            0.0,
+            1.0 - abs(brightness - brightness_midpoint) / brightness_radius,
+        )
+        quality_score = (
+            0.35 * confidence
+            + 0.2 * sharpness_quality
+            + 0.2 * face_size_quality
+            + 0.15 * brightness_quality
+            + 0.1 * resolution_quality
+        )
+
+        results.append(
+            FaceAnalysisResult(
+                embedding=[float(value) for value in embedding],
+                detection_confidence=confidence,
+                quality_score=quality_score,
+                width=width,
+                height=height,
+                face_count=len(faces),
+                face_bbox=(x1, y1, x2, y2),
+                face_size_px=face_size,
+                blur_score=blur_score,
+                brightness=brightness,
+            )
+        )
+    return results
 
 
 def successful_validation(filename: str, result: FaceAnalysisResult) -> dict[str, Any]:

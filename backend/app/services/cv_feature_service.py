@@ -12,7 +12,7 @@ logger = get_logger("features")
 DEFAULT_MASTER_FEATURES = [
     ("Face Recognition", "face_recognition", "Recognize enrolled faces at access points.", "active"),
     ("Attendance", "attendance", "Daily check-ins and attendance logs.", "active"),
-    ("Visitor Management", "visitor_management", "Track and classify visitors.", "active"),
+    ("Visitor + Unknown", "visitor_unknown", "Track visitors, unknown faces, and person detections.", "active"),
     ("ANPR", "anpr", "Automatic number plate recognition.", "active"),
     ("PPE Detection", "ppe_detection", "Detect safety equipment compliance.", "active"),
     ("Crowd Detection", "crowd_detection", "Detect crowding and occupancy spikes.", "active"),

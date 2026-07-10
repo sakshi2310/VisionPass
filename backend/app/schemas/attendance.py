@@ -88,7 +88,7 @@ class AttendanceFaceSettingsUpdate(BaseModel):
     face_match_threshold: float = Field(
         default_factory=lambda: settings.face_recognition_threshold, ge=0, le=1
     )
-    min_face_images: int = Field(default=3, ge=1)
+    min_face_images: int = Field(default=2, ge=1)
     recommended_face_images: int = Field(default=5, ge=1)
     max_face_images: int = Field(default=10, ge=1)
     min_face_size_px: int = Field(default=64, ge=1)

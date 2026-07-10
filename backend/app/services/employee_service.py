@@ -14,6 +14,8 @@ from app.core.config import settings as app_settings
 from app.db.vector import Vector
 from app.models.attendance import AttendanceFaceSettings, AttendanceShift
 from app.models.employee import AttendanceEmployee, EmployeeFaceEmbedding, EmployeeFaceImage, EmployeeFaceProfile
+from app.models.user import User
+from app.services.user_service import sync_attendance_employee_user
 from app.services.face_ai_service import (
     DUPLICATE_FACE_DETECTED,
     FaceValidationError,
@@ -25,7 +27,7 @@ from app.services.face_ai_service import (
 FACE_ENROLLMENT_STATUSES = {"Not Enrolled", "Processing", "Enrolled", "Failed"}
 DEFAULT_FACE_SETTINGS = {
     "face_match_threshold": app_settings.face_recognition_threshold,
-    "min_face_images": 3,
+    "min_face_images": 2,
     "recommended_face_images": 5,
     "max_face_images": 10,
     "min_face_size_px": 64,
@@ -39,6 +41,7 @@ DEFAULT_FACE_SETTINGS = {
     "embedding_dimension": 512,
     "is_active": True,
 }
+MIN_FACE_IMAGES_REQUIRED = 2
 
 
 def _now() -> datetime:
@@ -192,6 +195,7 @@ def create_employee(
     joining_date=None,
     employee_type: str = "Full Time",
     is_active: bool = True,
+    commit: bool = True,
 ) -> AttendanceEmployee:
     normalized_code = (employee_code or "").strip() or _generate_employee_code(db, tenant_id)
     normalized_name = full_name.strip()
@@ -243,8 +247,9 @@ def create_employee(
     get_or_create_face_settings(db, tenant_id)
     profile = EmployeeFaceProfile(tenant_id=tenant_id, employee_id=employee.id)
     db.add(profile)
-    db.commit()
-    db.refresh(employee)
+    if commit:
+        db.commit()
+        db.refresh(employee)
     return employee
 
 
@@ -265,6 +270,7 @@ def update_employee(
     joining_date=None,
     employee_type: str | None = None,
     is_active: bool | None = None,
+    commit: bool = True,
 ) -> AttendanceEmployee | None:
     employee = get_employee(db, tenant_id, employee_id)
     if employee is None:
@@ -331,9 +337,32 @@ def update_employee(
         employee.is_active = is_active
 
     db.add(employee)
-    db.commit()
-    db.refresh(employee)
+    if commit:
+        db.commit()
+        db.refresh(employee)
     return employee
+
+
+def sync_employee_portal_account(
+    db: Session,
+    tenant_id: str,
+    employee: AttendanceEmployee,
+    *,
+    created_by=None,
+) -> tuple[User, str | None]:
+    portal_user, temporary_password = sync_attendance_employee_user(
+        db,
+        tenant_id,
+        employee_id=employee.id,
+        full_name=employee.full_name,
+        email=employee.email,
+        phone=employee.mobile,
+        department=employee.department,
+        designation=employee.designation,
+        is_active=employee.is_active,
+        created_by=created_by,
+    )
+    return portal_user, temporary_password
 
 
 def delete_employee(db: Session, tenant_id: str, employee_id: str) -> bool:
@@ -368,11 +397,23 @@ def deactivate_employee(db: Session, tenant_id: str, employee_id: str) -> Attend
 
 
 def get_employee_face_profile(db: Session, tenant_id: str, employee_id: str) -> EmployeeFaceProfile | None:
-    return (
+    profile = (
         db.query(EmployeeFaceProfile)
         .filter(EmployeeFaceProfile.tenant_id == tenant_id, EmployeeFaceProfile.employee_id == employee_id)
         .one_or_none()
     )
+    if profile is None:
+        return None
+    active_embedding_count = db.query(EmployeeFaceEmbedding.id).filter(
+        EmployeeFaceEmbedding.tenant_id == tenant_id,
+        EmployeeFaceEmbedding.employee_id == employee_id,
+        EmployeeFaceEmbedding.is_active.is_(True),
+    ).count()
+    if active_embedding_count >= MIN_FACE_IMAGES_REQUIRED and profile.enrollment_status != "Enrolled":
+        profile.enrollment_status = "Enrolled"
+    elif active_embedding_count > 0 and profile.enrollment_status == "Not Enrolled":
+        profile.enrollment_status = "Processing"
+    return profile
 
 
 def get_employee_face_images(db: Session, tenant_id: str, employee_id: str) -> list[EmployeeFaceImage]:
@@ -470,8 +511,9 @@ def enroll_employee_faces(
         raise ValueError("Employee not found")
 
     settings = get_or_create_face_settings(db, tenant_id)
-    if len(images) < settings.min_face_images:
-        raise ValueError(f"Upload at least {settings.min_face_images} images")
+    required_face_images = MIN_FACE_IMAGES_REQUIRED
+    if len(images) < required_face_images:
+        raise ValueError(f"Upload at least {required_face_images} images")
     if len(images) > settings.max_face_images:
         raise ValueError(f"Upload no more than {settings.max_face_images} images")
 
@@ -576,9 +618,7 @@ def enroll_employee_faces(
     profile.average_quality_score = mean(quality_scores) if quality_scores else None
     profile.last_enrolled_at = _now() if created_embeddings else profile.last_enrolled_at
     if active_embedding_count:
-        profile.enrollment_status = (
-            "Enrolled" if active_embedding_count >= settings.min_face_images else "Processing"
-        )
+        profile.enrollment_status = "Enrolled" if active_embedding_count >= required_face_images else "Processing"
     else:
         profile.enrollment_status = "Failed"
     db.add(profile)

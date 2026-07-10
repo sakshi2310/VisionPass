@@ -82,22 +82,31 @@ function metricIcon(key: string) {
 export function AdminDashboard() {
   const { tenants } = useApp();
   const [features, setFeatures] = useState<AdminFeatureDefinition[]>([]);
-  const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [featureError, setFeatureError] = useState("");
 
   usePageTitle('Vision Pass | Dashboard');
 
-  async function loadDashboard() {
-    try {
-      setRefreshing(true);
-      const [summaryResponse, featureResponse] = await Promise.all([adminApi.getDashboardSummary(), adminApi.listFeatures()]);
-      setSummary(summaryResponse);
-      setFeatures(featureResponse.features);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  async function loadDashboard() {
+    try {
+      setRefreshing(true);
+      setFeatureError("");
+      const [summaryResult, featureResult] = await Promise.allSettled([adminApi.getDashboardSummary(), adminApi.listFeatures()]);
+      if (summaryResult.status === "fulfilled") {
+        setSummary(summaryResult.value);
+      }
+      if (featureResult.status === "fulfilled") {
+        setFeatures(featureResult.value.features);
+      } else {
+        setFeatureError(featureResult.reason instanceof Error ? featureResult.reason.message : "Unable to load features.");
+        setFeatures([]);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
@@ -162,7 +171,13 @@ export function AdminDashboard() {
             {refreshing ? 'Refreshing...' : 'Refresh'}
           </Button>
         </div>
-      </section>
+      </section>
+
+      {featureError ? (
+        <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+          {featureError}
+        </div>
+      ) : null}
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {metrics.map((metric) => {

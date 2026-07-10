@@ -11,6 +11,7 @@ import {
   LayoutDashboard,
   LogOut,
   ScanFace,
+  Search,
   Settings2,
   ShieldCheck,
   SlidersHorizontal,
@@ -51,6 +52,7 @@ const iconMap = {
   ChevronDown,
   Bell,
   UserRound,
+  Search,
 } as const;
 
 type SidebarProps = {
@@ -71,7 +73,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
   const { user, currentTenant, hasModule, logout } = useApp();
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("visionpass-sidebar-collapsed") === "true");
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    () => new Set(["tenant-attendance", "tenant-object-detection", "tenant-cameras"]),
+    () => new Set(["tenant-attendance", "tenant-object-detection", "tenant-cameras", "tenant-visitor-unknown"]),
   );
 
   const visibleItems = (items: typeof tenantAdminNavItems) =>
@@ -169,7 +171,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
             className="rounded-full border border-slate-200 bg-white p-2 text-slate-500 shadow-sm md:hidden dark:border-white/10 dark:bg-slate-950"
           >
             <span className="sr-only">Close sidebar</span>
-            ×
+            x
           </button>
         </div>
 

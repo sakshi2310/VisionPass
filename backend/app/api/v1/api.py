@@ -14,8 +14,11 @@ from app.api.v1.endpoints import (
     employees,
     me,
     recognition,
+    person_detections,
     reports,
+    staff,
     super_admin,
+    unknown_review,
     tenant_admin,
     tenants,
     tenant_auth,
@@ -45,6 +48,9 @@ api_router.include_router(employees.router, prefix="/employees", tags=["employee
 api_router.include_router(recognition.router, prefix="/recognition", tags=["recognition"])
 api_router.include_router(attendance.router, prefix="/attendance", tags=["attendance"])
 api_router.include_router(visitors.router, prefix="/visitors", tags=["visitors"])
+api_router.include_router(person_detections.router, prefix="/person-detections", tags=["person-detections"])
+api_router.include_router(staff.router, prefix="/staff", tags=["staff"])
+api_router.include_router(unknown_review.router, prefix="/unknown-review", tags=["unknown-review"])
 api_router.include_router(access.router, prefix="/access", tags=["access"])
 api_router.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 api_router.include_router(cameras.router, prefix="/cameras", tags=["cameras"])

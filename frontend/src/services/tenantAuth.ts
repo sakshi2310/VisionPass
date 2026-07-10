@@ -8,6 +8,7 @@ export type TenantAuthSession = {
   token: string;
   user: User;
   tenant: Tenant | null;
+  features: string[];
 };
 
 type ApiUser = {
@@ -45,6 +46,7 @@ type ApiAuthResponse = {
   };
   user: ApiUser;
   tenant?: ApiTenant | null;
+  features?: string[];
 };
 
 function hasWindow() {
@@ -197,6 +199,7 @@ export async function loginTenantAdmin(email: string, password: string): Promise
     token: session.token.access_token,
     user,
     tenant,
+    features: session.features ?? [],
   };
 }
 
@@ -213,5 +216,6 @@ export async function loginTenantUser(email: string, password: string): Promise<
     token: session.token.access_token,
     user,
     tenant,
+    features: session.features ?? [],
   };
 }

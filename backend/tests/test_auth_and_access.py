@@ -115,6 +115,71 @@ def test_role_based_access_rejects_tenant_user(client, tenant_user_headers):
     assert response.json()["detail"] == "Tenant admin access required"
 
 
+def test_attendance_employee_creates_portal_user(client, tenant_admin_headers):
+    created = client.post(
+        f"{ATTENDANCE_BASE}/employees",
+        headers=tenant_admin_headers,
+        json={
+            "employee_code": "EMP-LOGIN-1",
+            "full_name": "Portal Linked Employee",
+            "email": "portal.employee@example.test",
+            "department": "Operations",
+            "designation": "Operator",
+            "employee_type": "Full Time",
+            "is_active": True,
+        },
+    )
+    assert created.status_code == 201, created.text
+    payload = created.json()
+    assert payload["employee"]["email"] == "portal.employee@example.test"
+    assert payload["portal_account"]["created"] is True
+    assert payload["portal_account"]["temporary_password"]
+    assert payload["portal_account"]["role"] == "user"
+
+    login = client.post(
+        "/api/tenant/auth/login",
+        json={
+            "email": "portal.employee@example.test",
+            "password": payload["portal_account"]["temporary_password"],
+        },
+    )
+    assert login.status_code == 200, login.text
+    assert login.json()["user"]["role"] == "user"
+    assert login.json()["user"]["employee_id"] == payload["employee"]["id"]
+
+    attendance = client.get("/api/me/attendance", headers={"Authorization": f"Bearer {login.json()['token']['access_token']}"})
+    assert attendance.status_code == 200, attendance.text
+    assert attendance.json()["employee_linked"] is True
+
+
+def test_tenant_admin_inherits_enabled_modules_from_tenant(client, super_admin_headers):
+    created = client.post(
+        "/api/admin/tenants",
+        headers=super_admin_headers,
+        json={
+            "full_name": "Attendance Admin",
+            "email": "attendance.admin@example.test",
+            "password": "AttendanceAdmin@123",
+            "organization_name": "Attendance Tenant",
+            "slug": "attendance-tenant",
+            "status": "active",
+            "enabled_modules": ["attendance"],
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    login = client.post(
+        "/api/tenant/auth/login",
+        json={
+            "email": "attendance.admin@example.test",
+            "password": "AttendanceAdmin@123",
+        },
+    )
+    assert login.status_code == 200, login.text
+    assert "attendance" in login.json()["features"]
+    assert login.json()["user"]["role"] == "tenant_admin"
+
+
 def test_attendance_feature_flag_is_enforced(
     client,
     tenant_admin_headers,
@@ -192,3 +257,26 @@ def test_tenant_resources_are_isolated(
         ).status_code
         == 404
     )
+
+
+def test_admin_tenant_list_handles_multiple_tenant_admins(client, tenant_admin_headers, super_admin_headers):
+    created = client.post(
+        "/api/tenant-admin/members",
+        headers=tenant_admin_headers,
+        json={
+            "full_name": "Secondary Tenant Admin",
+            "email": "secondary.admin@example.test",
+            "password": "SecondaryAdmin@123",
+            "role": "tenant_admin",
+            "status": "active",
+            "assigned_features": [],
+        },
+    )
+    assert created.status_code == 201, created.text
+
+    response = client.get("/api/admin/tenants", headers=super_admin_headers)
+    assert response.status_code == 200, response.text
+    tenants = response.json()
+    assert tenants
+    tenant = next(item for item in tenants if item["slug"] == "visionpass-platform")
+    assert tenant["admin_email"] in {"tenant.admin@visionpass.test", "secondary.admin@example.test"}

@@ -15,6 +15,7 @@ export type ModuleKey =
   | "attendance"
   | "visitor_classification"
   | "visitor_management"
+  | "visitor_unknown"
   | "face_recognition"
   | "anpr"
   | "ppe_detection"

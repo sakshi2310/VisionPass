@@ -17,8 +17,16 @@ logger = get_logger("features")
 DEFAULT_MODULES = (
     "attendance",
     "object_detection",
-    "visitor_management",
+    "visitor_unknown",
 )
+
+MODULE_ALIASES = {
+    "visitor_management": "visitor_unknown",
+}
+
+
+def _canonical_module_code(module_name: str) -> str:
+    return MODULE_ALIASES.get(module_name, module_name)
 
 
 def _split_updated_by(db: Session, updated_by: str | None) -> tuple[str | None, str | None]:
@@ -30,7 +38,7 @@ def _split_updated_by(db: Session, updated_by: str | None) -> tuple[str | None, 
 
 
 def _active_feature_codes(db: Session) -> set[str]:
-    active_codes = set(list_active_feature_codes(db))
+    active_codes = {_canonical_module_code(code) for code in list_active_feature_codes(db)}
     if not active_codes:
         active_codes = set(DEFAULT_MODULES)
     return active_codes
@@ -45,7 +53,7 @@ def _tenant_enabled_codes(db: Session, tenant_id: str | None) -> set[str]:
         .filter(TenantFeature.tenant_id == tenant_id, TenantFeature.enabled.is_(True))
         .all()
     )
-    return {feature_code for (feature_code,) in rows if feature_code in active_codes}
+    return {_canonical_module_code(feature_code) for (feature_code,) in rows if _canonical_module_code(feature_code) in active_codes}
 
 
 def _member_enabled_codes(db: Session, tenant_id: str | None, member_id: str | None) -> set[str]:
@@ -63,7 +71,11 @@ def _member_enabled_codes(db: Session, tenant_id: str | None, member_id: str | N
         )
         .all()
     )
-    member_enabled = {feature_code for (feature_code,) in rows if feature_code in _active_feature_codes(db)}
+    member_enabled = {
+        _canonical_module_code(feature_code)
+        for (feature_code,) in rows
+        if _canonical_module_code(feature_code) in _active_feature_codes(db)
+    }
     return member_enabled & tenant_enabled if tenant_enabled else member_enabled
 
 
@@ -78,7 +90,7 @@ def list_tenant_flags(db: Session, tenant_id: str) -> list[TenantFeature]:
 
 def list_tenant_module_views(db: Session, tenant_id: str) -> list[TenantFeature]:
     active_codes = _active_feature_codes(db)
-    existing_flags = {flag.feature_code: flag for flag in list_tenant_flags(db, tenant_id)}
+    existing_flags = {_canonical_module_code(flag.feature_code): flag for flag in list_tenant_flags(db, tenant_id)}
     ordered_flags: list[TenantFeature] = []
     for module_name in active_codes:
         flag = existing_flags.get(module_name)
@@ -105,6 +117,7 @@ def list_enabled_member_modules(db: Session, tenant_id: str | None, member_id: s
 
 
 def get_flag(db: Session, tenant_id: str, module_name: str) -> TenantFeature | None:
+    module_name = _canonical_module_code(module_name)
     return (
         db.query(TenantFeature)
         .filter(
@@ -123,6 +136,7 @@ def upsert_flag(
     config: dict | None = None,
     updated_by: str | None = None,
 ) -> TenantFeature:
+    module_name = _canonical_module_code(module_name)
     logger.info(f'>>> TOGGLE MODULE -- Tenant: {tenant_id} | Module: {module_name} | Enabled: {enabled}')
     updated_by_super_admin_id, updated_by_member_id = _split_updated_by(db, updated_by)
     flag = get_flag(db, tenant_id, module_name)
@@ -156,8 +170,9 @@ def set_tenant_modules(
     logger.info(f'>>> REPLACE TENANT MODULES -- Tenant: {tenant_id} | Enabled modules: {enabled_modules}')
     updated_by_super_admin_id, updated_by_member_id = _split_updated_by(db, updated_by)
     active_codes = _active_feature_codes(db)
-    enabled_set = {module_name for module_name in enabled_modules if module_name in active_codes}
-    ordered_modules = [module_name for module_name in active_codes if module_name in enabled_modules or module_name not in enabled_set]
+    normalized_modules = [_canonical_module_code(module_name) for module_name in enabled_modules]
+    enabled_set = {module_name for module_name in normalized_modules if module_name in active_codes}
+    ordered_modules = [module_name for module_name in active_codes if module_name in normalized_modules or module_name not in enabled_set]
 
     updated_flags: list[TenantFeature] = []
     for module_name in ordered_modules:
@@ -191,6 +206,8 @@ def set_member_modules(
     member_id: str,
     feature_codes: list[str],
     updated_by: str | None = None,
+    *,
+    commit: bool = True,
 ) -> list[MemberFeature]:
     logger.info(f'>>> REPLACE MEMBER MODULES -- Tenant: {tenant_id} | Member: {member_id} | Features: {feature_codes}')
     member = (
@@ -207,7 +224,7 @@ def set_member_modules(
 
     active_codes = _active_feature_codes(db)
     tenant_enabled = _tenant_enabled_codes(db, tenant_id)
-    normalized_codes = [code.strip().lower() for code in feature_codes if code and code.strip()]
+    normalized_codes = [_canonical_module_code(code.strip().lower()) for code in feature_codes if code and code.strip()]
     invalid_codes = sorted({code for code in normalized_codes if code not in active_codes or code not in tenant_enabled})
     if invalid_codes:
         raise ValueError("Features must already be enabled for the tenant: " + ", ".join(invalid_codes))
@@ -227,14 +244,16 @@ def set_member_modules(
         db.add(row)
         updated_rows.append(row)
 
-    db.commit()
-    for row in updated_rows:
-        db.refresh(row)
+    if commit:
+        db.commit()
+        for row in updated_rows:
+            db.refresh(row)
     logger.info(f'OK MEMBER MODULES UPDATED -- Tenant: {tenant_id} | Member: {member_id} | Count: {len(updated_rows)}')
     return updated_rows
 
 
 def ensure_module_access(db: Session, current_user, module_name: str) -> bool:
+    module_name = _canonical_module_code(module_name)
     role = str(getattr(current_user, "role", "")).strip().lower()
     if role == "super_admin":
         return True
@@ -249,11 +268,8 @@ def ensure_module_access(db: Session, current_user, module_name: str) -> bool:
         return False
 
     tenant_enabled = _tenant_enabled_codes(db, tenant_id)
-    if module_name not in tenant_enabled:
-        return False
+    if role in {"tenant_admin", "client_admin"}:
+        return module_name in tenant_enabled
 
-    if role == "user":
-        member_enabled = _member_enabled_codes(db, tenant_id, member_id)
-        return module_name in member_enabled
-
-    return True
+    member_enabled = _member_enabled_codes(db, tenant_id, member_id)
+    return module_name in tenant_enabled and module_name in member_enabled

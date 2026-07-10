@@ -15,6 +15,7 @@ from app.services.attendance_service import (
 )
 from app.services.camera_service import CameraError, fetch_snapshot, get_camera
 from app.services.face_ai_service import FaceModelUnavailableError, FaceValidationError
+from app.services.person_detection_service import create_person_detections
 from app.services.recognition_service import recognize_employee_face
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,13 @@ def process_camera_frame(
         "frame_interval_seconds": settings.camera_frame_interval_seconds,
         "request_timeout_seconds": settings.camera_request_timeout_seconds,
     }
+    person_detections = create_person_detections(
+        db,
+        tenant_id,
+        camera.id,
+        snapshot["content"],
+        content_type=snapshot["content_type"],
+    )
     if not recognize:
         camera_event = log_camera_event(
             db,
@@ -165,7 +173,7 @@ def process_camera_frame(
             camera_id=camera.id,
             event_type=event_type,
             recognition_status="FRAME_CAPTURED",
-            metadata=frame_metadata,
+            metadata={**frame_metadata, "person_detection_count": len(person_detections)},
         )
         return {
             "camera": camera,
@@ -173,6 +181,7 @@ def process_camera_frame(
             "frame": frame_metadata,
             "recognition": None,
             "attendance": None,
+            "person_detections": person_detections,
         }
 
     try:
@@ -201,7 +210,7 @@ def process_camera_frame(
             camera_id=camera.id,
             event_type=event_type,
             recognition_status=exc.code,
-            metadata={**frame_metadata, "error": exc.message},
+            metadata={**frame_metadata, "error": exc.message, "person_detection_count": len(person_detections)},
         )
         raise
     except FaceModelUnavailableError:
@@ -225,7 +234,7 @@ def process_camera_frame(
             camera_id=camera.id,
             event_type=event_type,
             recognition_status="MODEL_UNAVAILABLE",
-            metadata=frame_metadata,
+            metadata={**frame_metadata, "person_detection_count": len(person_detections)},
         )
         raise
     attendance = None
@@ -317,6 +326,8 @@ def process_camera_frame(
             "attendance_status": attendance["daily"].status if attendance is not None else None,
             "attendance_decision": attendance_decision,
             "attendance_reason": attendance_reason,
+            "person_detection_count": len(person_detections),
+            "person_detection_ids": [detection.id for detection in person_detections],
         },
     )
     return {
@@ -325,4 +336,5 @@ def process_camera_frame(
         "frame": frame_metadata,
         "recognition": recognition,
         "attendance": attendance,
+        "person_detections": person_detections,
     }

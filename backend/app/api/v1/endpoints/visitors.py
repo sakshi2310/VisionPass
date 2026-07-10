@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import database_session, get_current_tenant_admin
+from app.core.dependencies import database_session, get_current_tenant_admin, require_module
 from app.schemas.visitor import (
     VisitorCheckIn,
     VisitorCheckOut,
@@ -11,12 +11,15 @@ from app.schemas.visitor import (
     VisitorDetail,
     VisitorListResponse,
     VisitorRead,
+    VisitorVisitListResponse,
+    VisitorNoteRequest,
     VisitorUpdate,
     VisitorVisitActionResponse,
     VisitorVisitRead,
 )
 from app.services.visitor_service import (
     VisitorError,
+    add_visitor_note,
     check_in_visitor,
     check_out_visitor,
     create_visitor,
@@ -24,10 +27,11 @@ from app.services.visitor_service import (
     get_visitor,
     list_visitor_visits,
     list_visitors,
+    get_visitor_visits,
     update_visitor,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_module("visitor_unknown"))])
 
 
 def _raise_visitor_error(exc: VisitorError) -> None:
@@ -78,6 +82,7 @@ def read_visitor(
     )
 
 
+@router.patch("/{visitor_id}", response_model=VisitorRead)
 @router.put("/{visitor_id}", response_model=VisitorRead)
 def save_visitor(
     visitor_id: str,
@@ -98,6 +103,34 @@ def save_visitor(
     if visitor is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visitor not found")
     return VisitorRead.model_validate(visitor)
+
+
+@router.post("/{visitor_id}/note", response_model=VisitorRead)
+def note_visitor(
+    visitor_id: str,
+    payload: VisitorNoteRequest,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+) -> VisitorRead:
+    visitor = add_visitor_note(db, current_admin.tenant_id, visitor_id, current_admin.id, payload.note)
+    if visitor is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visitor not found")
+    return VisitorRead.model_validate(visitor)
+
+
+@router.get("/{visitor_id}/visits", response_model=VisitorVisitListResponse)
+def read_visitor_visits(
+    visitor_id: str,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+) -> VisitorVisitListResponse:
+    visitor = get_visitor(db, current_admin.tenant_id, visitor_id)
+    if visitor is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Visitor not found")
+    visits = get_visitor_visits(db, current_admin.tenant_id, visitor.id)
+    return VisitorVisitListResponse(
+        visits=[VisitorVisitRead.model_validate(visit) for visit in visits]
+    )
 
 
 @router.delete("/{visitor_id}", status_code=status.HTTP_204_NO_CONTENT)

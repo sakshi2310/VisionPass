@@ -13,6 +13,7 @@ from app.core.security import create_access_token, hash_password, verify_passwor
 from app.models.super_admin import SuperAdmin
 from app.models.tenant import Tenant
 from app.models.tenant_member import TenantMember
+from app.services.feature_flag_service import list_enabled_member_modules
 
 logger = get_logger("auth")
 TENANT_USER_ROLES = {
@@ -230,3 +231,17 @@ def change_user_password(db: Session, user: Any, current_password: str, new_pass
     db.refresh(user)
     logger.info(f'OK PASSWORD UPDATED -- User: "{user.full_name}" (ID: {user.id})')
     return user
+
+
+def list_user_features(db: Session, user: Any) -> list[str]:
+    role = normalize_role(getattr(user, "role", None))
+    if role == "super_admin":
+        return []
+    tenant_id = getattr(user, "tenant_id", None)
+    if tenant_id is None:
+        return []
+    if role in {"tenant_admin", "client_admin"}:
+        from app.services.feature_flag_service import list_enabled_modules
+
+        return list_enabled_modules(db, tenant_id)
+    return list_enabled_member_modules(db, tenant_id, getattr(user, "id", None))

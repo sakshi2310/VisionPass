@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, AliasChoices
 
 
 class TenantAdminMemberRead(BaseModel):
@@ -12,6 +12,7 @@ class TenantAdminMemberRead(BaseModel):
     role: str
     status: str
     is_active: bool
+    assigned_features: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -28,7 +29,7 @@ class TenantAdminMemberCreate(BaseModel):
     password: str
     role: str = "user"
     status: str = "active"
-    feature_codes: list[str] = Field(default_factory=list)
+    assigned_features: list[str] = Field(default_factory=list, validation_alias=AliasChoices("assigned_features", "feature_codes"))
 
 
 class TenantAdminMemberUpdate(BaseModel):
@@ -37,7 +38,7 @@ class TenantAdminMemberUpdate(BaseModel):
     password: str | None = None
     role: str | None = None
     status: str | None = None
-    feature_codes: list[str] | None = None
+    assigned_features: list[str] | None = Field(default=None, validation_alias=AliasChoices("assigned_features", "feature_codes"))
 
 
 class TenantAdminDashboardSummary(BaseModel):
@@ -58,8 +59,8 @@ class TenantAdminFeatureListResponse(BaseModel):
 
 
 class TenantAdminMemberFeaturesUpdate(BaseModel):
-    feature_codes: list[str] = Field(default_factory=list)
+    assigned_features: list[str] = Field(default_factory=list, validation_alias=AliasChoices("assigned_features", "feature_codes"))
 
 
 class TenantAdminMemberFeatureCodesResponse(BaseModel):
-    feature_codes: list[str] = Field(default_factory=list)
+    assigned_features: list[str] = Field(default_factory=list)

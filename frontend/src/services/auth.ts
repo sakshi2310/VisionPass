@@ -11,6 +11,7 @@ export type AuthSession = {
   token: string;
   user: User;
   tenant: ReturnType<typeof normalizeTenant>;
+  features: string[];
 };
 
 type ApiUser = {
@@ -275,6 +276,7 @@ export async function login(email: string, password: string): Promise<AuthSessio
     token: accessToken,
     user,
     tenant,
+    features: session.features ?? [],
   };
 }
 
@@ -306,6 +308,7 @@ export async function bootstrapSuperAdmin(
     token: session.token.access_token,
     user,
     tenant,
+    features: session.features ?? [],
   };
 }
 
@@ -332,6 +335,7 @@ export async function signup(
     token: session.token.access_token,
     user,
     tenant,
+    features: session.features ?? [],
   };
 }
 
@@ -385,6 +389,7 @@ export async function getCurrentSession(): Promise<AuthSession | null> {
       token,
       user,
       tenant,
+      features: session.features ?? [],
     };
   } catch {
     clearSession();

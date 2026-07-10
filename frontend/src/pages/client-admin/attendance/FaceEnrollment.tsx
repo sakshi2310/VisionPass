@@ -10,11 +10,14 @@ import { Toast } from "@/components/ui/Toast";
 import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
+  fetchCameras,
+  fetchCameraSnapshot,
   fetchEmployees,
   fetchFaceEnrollmentSummary,
   FaceEnrollmentApiError,
   reEnrollFace,
   uploadFaceImages,
+  type Camera as CameraDevice,
   type Employee,
   type FaceEnrollmentPayload,
   type FaceImageValidationResult,
@@ -79,10 +82,13 @@ export function FaceEnrollmentPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [summary, setSummary] = useState<{ total_employees: number; enrolled_employees: number; in_progress_employees: number; failed_employees: number; total_images: number; total_embeddings: number } | null>(null);
+  const [cameras, setCameras] = useState<CameraDevice[]>([]);
+  const [selectedCameraId, setSelectedCameraId] = useState("");
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(searchParams.get("employeeId") ?? "");
   const [images, setImages] = useState<DraftImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [reEnroll, setReEnroll] = useState(false);
   const [lastResponse, setLastResponse] = useState<{ profile: string; embeddings: number; images: number } | null>(null);
@@ -95,10 +101,16 @@ export function FaceEnrollmentPage() {
     async function loadPage() {
       try {
         setLoading(true);
-        const [employeeRows, summaryRows] = await Promise.all([fetchEmployees(), fetchFaceEnrollmentSummary()]);
+        const [employeeRows, summaryRows, cameraRows] = await Promise.all([
+          fetchEmployees(),
+          fetchFaceEnrollmentSummary(),
+          fetchCameras(),
+        ]);
         if (!active) return;
         setEmployees(employeeRows);
         setSummary(summaryRows);
+        setCameras(cameraRows.filter((camera) => camera.is_active && Boolean(camera.snapshot_url)));
+        setSelectedCameraId((current) => current || cameraRows.find((camera) => camera.is_active && Boolean(camera.snapshot_url))?.id || "");
       } catch (error) {
         if (!active) return;
         setToast({ tone: "error", title: "Load failed", message: error instanceof Error ? error.message : "Unable to load face enrollment data." });
@@ -123,6 +135,10 @@ export function FaceEnrollmentPage() {
   async function handleFiles(event: ChangeEvent<HTMLInputElement>) {
     const fileList = Array.from(event.target.files ?? []);
     if (fileList.length === 0) return;
+    if (fileList.length > 10) {
+      setToast({ tone: "error", title: "Too many images", message: "Use no more than 10 images for one employee." });
+      return;
+    }
     try {
       setSaving(true);
       const nextImages = await Promise.all(fileList.map((file) => loadImageMeta(file)));
@@ -135,13 +151,36 @@ export function FaceEnrollmentPage() {
     }
   }
 
+  async function captureFromCamera() {
+    if (!selectedCameraId) {
+      setToast({ tone: "error", title: "Select a camera", message: "Choose a camera snapshot source first." });
+      return;
+    }
+    if (images.length >= 10) {
+      setToast({ tone: "error", title: "Image limit reached", message: "Keep the total enrollment set at 10 images or fewer." });
+      return;
+    }
+    try {
+      setCapturing(true);
+      const blob = await fetchCameraSnapshot(selectedCameraId);
+      const file = new File([blob], `camera-${selectedCameraId}-${Date.now()}.jpg`, { type: blob.type || "image/jpeg" });
+      const prepared = await loadImageMeta(file);
+      setImages((current) => [...current, prepared].slice(0, 10));
+      setToast({ tone: "success", title: "Camera frame captured", message: "The live camera photo was added to this employee's enrollment set." });
+    } catch (error) {
+      setToast({ tone: "error", title: "Capture failed", message: error instanceof Error ? error.message : "Unable to capture a camera snapshot." });
+    } finally {
+      setCapturing(false);
+    }
+  }
+
   async function handleSubmit() {
     if (!selectedEmployeeId) {
       setToast({ tone: "error", title: "Select an employee", message: "Choose an employee before uploading face images." });
       return;
     }
-    if (images.length === 0) {
-      setToast({ tone: "error", title: "Add images", message: "Upload at least one face image to continue." });
+    if (images.length < 2) {
+      setToast({ tone: "error", title: "Add images", message: "Upload at least 2 face images before saving." });
       return;
     }
 
@@ -234,7 +273,7 @@ export function FaceEnrollmentPage() {
 
             <label className="flex cursor-pointer flex-col gap-3 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
               <span className="flex items-center gap-2 font-medium text-slate-900 dark:text-white"><Upload className="h-4 w-4" /> Upload face images</span>
-              <span>Choose 3 to 10 clear face images from the device.</span>
+              <span>Choose 2 to 10 clear face images from the device. You can add camera snapshots below too.</span>
               <input type="file" accept="image/*" multiple className="hidden" onChange={(event) => void handleFiles(event)} disabled={saving} />
             </label>
 
@@ -324,9 +363,35 @@ export function FaceEnrollmentPage() {
       </Card>
 
       <Card className="grid gap-4 p-5">
-        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Webcam capture</h2>
+        <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Camera capture</h2>
+        <div className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
+          <label className="grid gap-2">
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">Snapshot camera</span>
+            <select
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none transition focus:border-cyan-400 dark:border-white/10 dark:bg-slate-950/60 dark:text-white"
+              value={selectedCameraId}
+              onChange={(event) => setSelectedCameraId(event.target.value)}
+              disabled={capturing || saving}
+            >
+              <option value="">Select an active camera</option>
+              {cameras.map((camera) => (
+                <option key={camera.id} value={camera.id}>
+                  {camera.name} - {camera.location}
+                </option>
+              ))}
+            </select>
+          </label>
+          <Button
+            variant="secondary"
+            leftIcon={capturing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+            onClick={() => void captureFromCamera()}
+            disabled={capturing || saving || cameras.length === 0}
+          >
+            {capturing ? "Capturing..." : "Capture from camera"}
+          </Button>
+        </div>
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          Webcam capture is reserved for the next pass. The upload path is wired now, and the service layer already accepts the same face payload shape for a future capture flow.
+          Add 2 uploaded photos, then mix in up to 8 clean camera snapshots from the same person. The duplicate-face guard still blocks adding another person by mistake.
         </div>
       </Card>
 

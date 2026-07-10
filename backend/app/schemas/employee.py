@@ -41,6 +41,19 @@ class EmployeeCreate(EmployeeBase):
     employee_code: str | None = None
 
 
+class EmployeePortalAccountRead(BaseModel):
+    user_id: str
+    email: str
+    role: str = "user"
+    temporary_password: str | None = None
+    created: bool = False
+
+
+class EmployeeCreateResponse(BaseModel):
+    employee: EmployeeRead
+    portal_account: EmployeePortalAccountRead | None = None
+
+
 class EmployeeUpdate(BaseModel):
     employee_code: str | None = None
     full_name: str | None = None

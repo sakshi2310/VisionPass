@@ -1,5 +1,5 @@
 import { PencilLine, Plus, RefreshCw, Search, Trash2, UserRoundCog } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -31,7 +31,7 @@ const emptyDraft: Draft = {
 };
 
 function roleLabel(role: TenantAdminMember["role"]) {
-  return role === "TENANT_ADMIN" ? "tenant_admin" : "user";
+  return role.toUpperCase() === "TENANT_ADMIN" ? "tenant_admin" : "user";
 }
 
 function statusTone(status: TenantAdminMember["status"]) {
@@ -41,7 +41,7 @@ function statusTone(status: TenantAdminMember["status"]) {
 }
 
 export function TenantAdminMembers() {
-  const { currentTenant } = useApp();
+  const { currentTenant, user, refreshSession } = useApp();
   const [members, setMembers] = useState<TenantAdminMember[]>([]);
   const [featureOptions, setFeatureOptions] = useState<TenantAdminFeature[]>([]);
   const [selectedFeatureCodes, setSelectedFeatureCodes] = useState<string[]>([]);
@@ -55,9 +55,10 @@ export function TenantAdminMembers() {
   const [activeMember, setActiveMember] = useState<TenantAdminMember | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [pendingDelete, setPendingDelete] = useState<TenantAdminMember | null>(null);
+  const openEditRequestId = useRef(0);
   const pageSize = 8;
 
-  usePageTitle("Vision Pass | Tenant Members");
+  usePageTitle("Vision Pass | Portal Users");
 
   async function loadMembers() {
     try {
@@ -66,7 +67,7 @@ export function TenantAdminMembers() {
       const response = await tenantAdminApi.listMembers();
       setMembers(response);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to load members.");
+      setError(err instanceof Error ? err.message : "Unable to load portal users.");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -105,6 +106,7 @@ export function TenantAdminMembers() {
   }, [page, totalPages]);
 
   function openCreate() {
+    openEditRequestId.current += 1;
     setMode("create");
     setActiveMember(null);
     setDraft(emptyDraft);
@@ -113,24 +115,36 @@ export function TenantAdminMembers() {
   }
 
   async function openEdit(member: TenantAdminMember) {
+    const requestId = ++openEditRequestId.current;
     setMode("edit");
-    setActiveMember(member);
-    setDraft({
-      full_name: member.full_name,
-      email: member.email,
-      password: "",
-      role: member.role === "TENANT_ADMIN" ? "tenant_admin" : "user",
-      status: member.status,
-    });
-    setError("");
+    setActiveMember(null);
+    setDraft(emptyDraft);
+    setSelectedFeatureCodes([]);
     try {
-      setSelectedFeatureCodes(await tenantAdminApi.listMemberFeatures(member.id));
-    } catch {
+      const latest = await tenantAdminApi.getMember(member.id);
+      if (openEditRequestId.current !== requestId) return;
+      setActiveMember(latest);
+      setDraft({
+        full_name: latest.full_name,
+        email: latest.email,
+        password: "",
+        role: latest.role.toUpperCase() === "TENANT_ADMIN" ? "tenant_admin" : "user",
+        status: latest.status,
+      });
+      setSelectedFeatureCodes(latest.assigned_features ?? []);
+      setError("");
+    } catch (err) {
+      if (openEditRequestId.current !== requestId) return;
+      setError(err instanceof Error ? err.message : "Unable to load portal user.");
+      setMode(null);
+      setActiveMember(null);
+      setDraft(emptyDraft);
       setSelectedFeatureCodes([]);
     }
   }
 
   function closeModal() {
+    openEditRequestId.current += 1;
     setMode(null);
     setActiveMember(null);
     setDraft(emptyDraft);
@@ -148,7 +162,7 @@ export function TenantAdminMembers() {
       return;
     }
     if (mode === "create" && !draft.password.trim()) {
-      setError("Password is required when creating a member.");
+      setError("Password is required when creating a portal user.");
       return;
     }
     if (mode === "edit" && !activeMember) {
@@ -164,7 +178,7 @@ export function TenantAdminMembers() {
         password: draft.password.trim(),
         role: draft.role,
         status: draft.status,
-        feature_codes: selectedFeatureCodes,
+        assigned_features: selectedFeatureCodes,
       };
 
       if (mode === "create") {
@@ -175,22 +189,25 @@ export function TenantAdminMembers() {
           email: payload.email,
           role: payload.role,
           status: payload.status,
-          feature_codes: selectedFeatureCodes,
+          assigned_features: selectedFeatureCodes,
         };
         if (payload.password) updatePayload.password = payload.password;
         await tenantAdminApi.updateMember(activeMember.id, updatePayload);
       }
       await loadMembers();
+      if (mode === "edit" && activeMember && user?.id === activeMember.id) {
+        await refreshSession();
+      }
       closeModal();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to save member.");
+      setError(err instanceof Error ? err.message : "Unable to save portal user.");
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete(member: TenantAdminMember) {
-    const confirmed = window.confirm(`Delete ${member.full_name}? This will remove access for this member.`);
+    const confirmed = window.confirm(`Delete ${member.full_name}? This will remove access for this portal user.`);
     if (!confirmed) return;
     try {
       setSaving(true);
@@ -198,7 +215,7 @@ export function TenantAdminMembers() {
       await loadMembers();
       setPendingDelete(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Unable to delete member.");
+      setError(err instanceof Error ? err.message : "Unable to delete portal user.");
     } finally {
       setSaving(false);
     }
@@ -213,10 +230,10 @@ export function TenantAdminMembers() {
       <section className="surface-strong p-7">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Tenant members</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Members in {currentTenant?.name ?? "your tenant"}</h1>
+            <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Portal users</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Portal Users in {currentTenant?.name ?? "your tenant"}</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              This page is scoped to the logged-in tenant only. Tenant admins can create, edit, suspend, and remove members without accessing other tenants.
+              This page is scoped to the logged-in tenant only. Tenant admins can create, edit, suspend, and remove portal users without accessing other tenants.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -224,7 +241,7 @@ export function TenantAdminMembers() {
               {refreshing ? "Refreshing..." : "Refresh"}
             </Button>
             <Button leftIcon={<Plus className="h-4 w-4" />} onClick={openCreate}>
-              Create Member
+              Create Portal User
             </Button>
           </div>
         </div>
@@ -232,7 +249,7 @@ export function TenantAdminMembers() {
 
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
-          <div className="text-sm text-slate-500 dark:text-slate-400">Total Members</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">Total Portal Users</div>
           <div className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{members.length}</div>
         </Card>
         <Card className="p-4">
@@ -244,7 +261,7 @@ export function TenantAdminMembers() {
           <div className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{userCount}</div>
         </Card>
         <Card className="p-4">
-          <div className="text-sm text-slate-500 dark:text-slate-400">Active Members</div>
+          <div className="text-sm text-slate-500 dark:text-slate-400">Active Portal Users</div>
           <div className="mt-2 text-3xl font-semibold text-slate-900 dark:text-white">{activeCount}</div>
         </Card>
       </section>
@@ -252,26 +269,26 @@ export function TenantAdminMembers() {
       {error ? <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{error}</div> : null}
 
       <section className="grid gap-4 rounded-3xl border border-slate-200 bg-white/80 p-5 shadow-soft backdrop-blur dark:border-white/10 dark:bg-slate-950/75 lg:grid-cols-[1fr_auto] lg:items-end">
-        <Input label="Search members" placeholder="Name, email, role, status" value={search} onChange={(event) => setSearch(event.target.value)} leftIcon={<Search className="h-4 w-4" />} />
+        <Input label="Search portal users" placeholder="Name, email, role, status" value={search} onChange={(event) => setSearch(event.target.value)} leftIcon={<Search className="h-4 w-4" />} />
         <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
-          Only members from the current tenant are shown here.
+          Only portal users from the current tenant are shown here.
         </div>
       </section>
 
       <DataTable
-        title="Tenant member list"
+        title="Portal user list"
         subtitle="Name, Email, Role, Status, Created Date, Actions"
         headers={["Name", "Email", "Role", "Status", "Created Date", "Actions"]}
         emptyState={
           !loading && filteredMembers.length === 0 ? (
-            <div className="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No members found for the current filters.</div>
+            <div className="px-5 py-10 text-center text-sm text-slate-500 dark:text-slate-400">No portal users found for the current filters.</div>
           ) : null
         }
       >
         {loading ? (
           <tr>
             <td className="px-5 py-6 text-sm text-slate-500 dark:text-slate-400" colSpan={6}>
-              Loading members...
+              Loading portal users...
             </td>
           </tr>
         ) : (
@@ -302,7 +319,7 @@ export function TenantAdminMembers() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-slate-500 dark:text-slate-400">
-          Showing {filteredMembers.length === 0 ? 0 : (page - 1) * pageSize + 1} to {filteredMembers.length === 0 ? 0 : Math.min(page * pageSize, filteredMembers.length)} of {filteredMembers.length} members
+          Showing {filteredMembers.length === 0 ? 0 : (page - 1) * pageSize + 1} to {filteredMembers.length === 0 ? 0 : Math.min(page * pageSize, filteredMembers.length)} of {filteredMembers.length} portal users
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>
@@ -316,16 +333,16 @@ export function TenantAdminMembers() {
 
       <Modal
         open={mode !== null}
-        title={mode === "create" ? "Create member" : "Edit member"}
-        description="Edit the member inside a pop-up form without leaving the tenant admin workspace."
+        title={mode === "create" ? "Create portal user" : "Edit portal user"}
+        description="Edit the portal user inside a pop-up form without leaving the tenant admin workspace."
         onClose={closeModal}
         footer={
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={closeModal}>
               Cancel
             </Button>
-            <Button type="submit" form="tenant-admin-member-form" disabled={saving}>
-              {saving ? "Saving..." : mode === "create" ? "Create member" : "Save changes"}
+            <Button type="submit" form="tenant-admin-member-form" disabled={saving || (mode === "edit" && !activeMember)}>
+              {saving ? "Saving..." : mode === "create" ? "Create portal user" : "Save changes"}
             </Button>
           </div>
         }
@@ -368,30 +385,65 @@ export function TenantAdminMembers() {
 
           <label className="grid gap-2">
             <span className="text-sm font-medium text-slate-600 dark:text-slate-300">Assigned features</span>
-            <select
-              multiple
-              value={selectedFeatureCodes}
-              onChange={(event) => {
-                const values = Array.from(event.currentTarget.selectedOptions).map((option) => option.value);
-                setSelectedFeatureCodes(values);
-              }}
-              className="min-h-[160px] rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-slate-900 shadow-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-400/20 dark:border-white/10 dark:bg-slate-950/70 dark:text-slate-100"
-            >
-              {featureOptions.length === 0 ? <option value="" disabled>No enabled features available</option> : null}
-              {featureOptions.map((feature) => (
-                <option key={feature.feature_code} value={feature.feature_code}>
-                  {feature.feature_name} ({feature.feature_code})
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Hold Ctrl or Command to select multiple features. Only tenant-enabled features can be assigned.</p>
+            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-white/10 dark:bg-slate-950/70">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Assigned features</p>
+                <Badge tone="info">{selectedFeatureCodes.length} selected</Badge>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {featureOptions.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-white/10 dark:text-slate-400">
+                    No tenant-enabled optional features are available.
+                  </div>
+                ) : null}
+                {featureOptions.map((feature) => {
+                  const checked = selectedFeatureCodes.includes(feature.feature_code);
+                  return (
+                    <label
+                      key={feature.feature_code}
+                      className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 px-4 py-3 transition hover:border-brand-400/50 hover:bg-brand-50/40 dark:border-white/10 dark:hover:border-brand-400/40 dark:hover:bg-white/5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const next = event.target.checked
+                            ? Array.from(new Set([...selectedFeatureCodes, feature.feature_code]))
+                            : selectedFeatureCodes.filter((code) => code !== feature.feature_code);
+                          setSelectedFeatureCodes(next);
+                        }}
+                        className="mt-1 h-4 w-4 rounded border-slate-300 text-brand-500 focus:ring-brand-400"
+                      />
+                      <span className="grid gap-1">
+                        <span className="font-medium text-slate-900 dark:text-white">{feature.feature_name}</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">{feature.feature_code}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+              {!selectedFeatureCodes.length ? (
+                <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">No optional features assigned.</p>
+              ) : (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {selectedFeatureCodes.map((code) => {
+                    const feature = featureOptions.find((item) => item.feature_code === code);
+                    return (
+                      <Badge key={code} tone="success">
+                        {feature?.feature_name ?? code}
+                      </Badge>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </label>
         </form>
       </Modal>
 
       <Modal
         open={pendingDelete !== null}
-        title="Suspend or delete member"
+        title="Suspend or delete portal user"
         description="Choose whether to suspend the account or remove access completely."
         onClose={() => setPendingDelete(null)}
         footer={
@@ -409,7 +461,7 @@ export function TenantAdminMembers() {
                   await loadMembers();
                   setPendingDelete(null);
                 } catch (err) {
-                  setError(err instanceof Error ? err.message : "Unable to suspend member.");
+                  setError(err instanceof Error ? err.message : "Unable to suspend portal user.");
                 } finally {
                   setSaving(false);
                 }
@@ -425,7 +477,7 @@ export function TenantAdminMembers() {
         }
       >
         <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Suspending keeps the account in the tenant but disables access. Deleting will soft-remove the member from the tenant.
+          Suspending keeps the account in the tenant but disables access. Deleting will soft-remove the portal user from the tenant.
         </p>
       </Modal>
     </div>

@@ -28,7 +28,7 @@ function formatClockTime(value?: string) {
 
 export function CameraZoneViewPage() {
   const navigate = useNavigate();
-  const { user } = useApp();
+  const { user, hasModule } = useApp();
   const basePath = user?.role === "TENANT_ADMIN" ? "/tenant-admin" : "/client-admin";
   const [cameras, setCameras] = useState<Camera[]>([]);
   const [feedVersions, setFeedVersions] = useState<Record<string, number>>({});
@@ -73,6 +73,8 @@ export function CameraZoneViewPage() {
   }, [activeCameras]);
 
   useEffect(() => {
+    if (!hasModule("attendance")) return;
+
     const eligibleCameras = activeCameras.filter(
       (camera) => camera.snapshot_url && (camera.assigned_feature_scope === "attendance" || camera.assigned_feature_scope === "both"),
     );
@@ -127,7 +129,7 @@ export function CameraZoneViewPage() {
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [activeCameras]);
+  }, [activeCameras, hasModule]);
 
   function refreshCamera(cameraId: string) {
     setFeedVersions((current) => ({ ...current, [cameraId]: (current[cameraId] ?? 0) + 1 }));
@@ -195,7 +197,7 @@ export function CameraZoneViewPage() {
                 )}
               </button>
               <p className="mt-3 text-xs text-slate-500">HTTP MJPEG and Phone IP Webcam streams preview directly. RTSP requires a browser-compatible gateway.</p>
-              {(camera.assigned_feature_scope === "attendance" || camera.assigned_feature_scope === "both") ? (
+              {hasModule("attendance") && (camera.assigned_feature_scope === "attendance" || camera.assigned_feature_scope === "both") ? (
                 <div className="mt-3 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/5 dark:text-slate-300">
                   Auto recognition: {autoStatus[camera.id]?.running ? "running" : autoStatus[camera.id]?.label ?? "waiting"}
                   {autoStatus[camera.id]?.updated_at ? ` | ${formatClockTime(autoStatus[camera.id].updated_at)}` : ""}

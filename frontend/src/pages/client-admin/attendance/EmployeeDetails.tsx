@@ -32,6 +32,13 @@ function faceTone(status: string) {
   return "neutral" as const;
 }
 
+function imageTone(status: string) {
+  if (status === "Validated") return "success" as const;
+  if (status === "Pending") return "warning" as const;
+  if (status === "Rejected") return "danger" as const;
+  return "neutral" as const;
+}
+
 type ToastState = {
   tone: "success" | "error";
   title: string;
@@ -211,19 +218,36 @@ export function EmployeeDetailsPage() {
             {images.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">No face images stored yet.</div>
             ) : (
-              images.map((image) => (
-                <div key={image.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-medium text-slate-900 dark:text-white">{image.original_filename ?? image.id}</div>
-                      <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{image.image_type ?? "Image"}</div>
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {images.map((image) => (
+                  <div key={image.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-slate-950/30">
+                    <div className="aspect-[4/3] w-full bg-slate-100 dark:bg-slate-900">
+                      <img
+                        src={image.image_url}
+                        alt={image.original_filename ?? `Employee face image ${image.id}`}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
                     </div>
-                    <Badge tone={faceTone(image.validation_status === "Validated" ? "Enrolled" : image.validation_status)}>{image.validation_status}</Badge>
+                    <div className="grid gap-3 p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium text-slate-900 dark:text-white">{image.original_filename ?? image.id}</div>
+                          <div className="mt-1 text-sm text-slate-500 dark:text-slate-400">{image.image_type ?? "Image"}</div>
+                        </div>
+                        <Badge tone={imageTone(image.validation_status)}>{image.validation_status}</Badge>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-400">
+                        <div>Created {formatDate(image.created_at)}</div>
+                        <div>Face count {image.face_count}</div>
+                        <div>Quality {image.quality_score ?? "-"}</div>
+                        <div>{image.embedding_generated ? "Embedding ready" : "No embedding"}</div>
+                      </div>
+                      {image.validation_message ? <div className="text-sm text-rose-300">{image.validation_message}</div> : null}
+                    </div>
                   </div>
-                  <div className="mt-3 text-xs text-slate-500 dark:text-slate-400">Created {formatDate(image.created_at)}</div>
-                  {image.validation_message ? <div className="mt-2 text-sm text-rose-300">{image.validation_message}</div> : null}
-                </div>
-              ))
+                ))}
+              </div>
             )}
           </div>
         </Card>

@@ -21,6 +21,7 @@ from app.models.employee import (
 )
 from app.models.feature import Feature
 from app.models.member_feature import MemberFeature
+from app.models.person_detection import PersonDetection
 from app.models.super_admin import SuperAdmin
 from app.models.tenant import Tenant
 from app.models.tenant_feature import TenantFeature

@@ -16,6 +16,8 @@ const reportNames: Record<ReportKind, string> = {
   attendance: "Attendance",
   employees: "Employees",
   visitors: "Visitors",
+  person_detections: "Person Detections",
+  unknown_review: "Unknown Review",
   cameras: "Cameras",
   recognition: "Recognition",
   access: "Access logs",
@@ -36,9 +38,19 @@ const columns: Record<ReportKind, { key: string; label: string }[]> = {
   ],
   visitors: [
     { key: "full_name", label: "Visitor" }, { key: "company", label: "Company" },
-    { key: "purpose", label: "Purpose" }, { key: "host_employee_name", label: "Host" },
-    { key: "status", label: "Status" }, { key: "check_in_time", label: "Check in" },
-    { key: "check_out_time", label: "Check out" },
+    { key: "purpose", label: "Purpose" }, { key: "match_type", label: "Match type" },
+    { key: "status", label: "Status" }, { key: "camera_name", label: "Camera" },
+    { key: "zone_id", label: "Zone" }, { key: "seen_at", label: "Seen at" },
+  ],
+  person_detections: [
+    { key: "detected_at", label: "Detected" }, { key: "camera_name", label: "Camera" },
+    { key: "zone_id", label: "Zone" }, { key: "match_type", label: "Match type" },
+    { key: "status", label: "Status" }, { key: "note", label: "Note" },
+  ],
+  unknown_review: [
+    { key: "detected_at", label: "Detected" }, { key: "camera_name", label: "Camera" },
+    { key: "zone_id", label: "Zone" }, { key: "note", label: "Note" },
+    { key: "status", label: "Status" }, { key: "match_type", label: "Match type" },
   ],
   cameras: [
     { key: "name", label: "Camera" }, { key: "location", label: "Location" },
@@ -62,7 +74,9 @@ const columns: Record<ReportKind, { key: string; label: string }[]> = {
 const statusOptions: Record<ReportKind, string[]> = {
   attendance: ["present", "late", "half_day", "absent", "holiday"],
   employees: ["active", "inactive"],
-  visitors: ["expected", "checked_in", "checked_out", "blocked"],
+  visitors: ["active", "important", "blocked", "expected", "checked_in", "checked_out"],
+  person_detections: ["new", "reviewed", "suspicious", "converted_to_visitor", "ignored"],
+  unknown_review: ["new", "reviewed", "suspicious", "ignored"],
   cameras: ["active", "inactive", "online", "offline", "error", "unknown"],
   recognition: ["MATCHED", "UNKNOWN", "LOW_CONFIDENCE", "NO_FACE", "MULTIPLE_FACES"],
   access: ["granted", "denied", "manual_review"],
@@ -131,14 +145,14 @@ export function ReportsPage() {
           <h1 className="mt-2 text-3xl font-semibold text-white">Operational reporting</h1>
           <p className="mt-2 text-sm text-slate-400">Filter live tenant data across attendance, people, cameras, recognition, and access.</p>
         </div>
-        {(kind === "attendance" || kind === "access") && (
+        {(["attendance", "access", "visitors", "person_detections", "unknown_review"] as ReportKind[]).includes(kind) && (
           <Button
             variant="secondary"
             leftIcon={<Download className="h-4 w-4" />}
             disabled={exporting}
             onClick={async () => {
               setExporting(true);
-              try { await downloadReport(kind, filters); } catch (reason) {
+              try { await downloadReport(kind as "attendance" | "access" | "visitors" | "person_detections" | "unknown_review", filters); } catch (reason) {
                 setError(reason instanceof Error ? reason.message : "Export failed.");
               } finally { setExporting(false); }
             }}
@@ -164,7 +178,7 @@ export function ReportsPage() {
         <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input className={fieldClass} type="date" aria-label="Start date" value={filters.start_date ?? ""} onChange={(event) => updateFilter("start_date", event.target.value)} />
           <input className={fieldClass} type="date" aria-label="End date" value={filters.end_date ?? ""} onChange={(event) => updateFilter("end_date", event.target.value)} />
-          {kind !== "cameras" && (
+          {kind !== "cameras" && kind !== "visitors" && kind !== "person_detections" && kind !== "unknown_review" && (
             <select className={fieldClass} aria-label="Employee" value={filters.employee_id ?? ""} onChange={(event) => updateFilter("employee_id", event.target.value)}>
               <option value="">All employees</option>
               {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.full_name}</option>)}
@@ -176,11 +190,28 @@ export function ReportsPage() {
               {departments.map((department) => <option key={department} value={department}>{department}</option>)}
             </select>
           )}
+          {["visitors", "person_detections", "unknown_review"].includes(kind) && (
+            <input
+              className={fieldClass}
+              aria-label="Zone"
+              placeholder="Zone"
+              value={filters.zone_id ?? ""}
+              onChange={(event) => updateFilter("zone_id", event.target.value)}
+            />
+          )}
+          {["visitors", "person_detections", "unknown_review"].includes(kind) && (
+            <select className={fieldClass} aria-label="Match type" value={filters.match_type ?? ""} onChange={(event) => updateFilter("match_type", event.target.value)}>
+              <option value="">All match types</option>
+              <option value="staff">Staff</option>
+              <option value="visitor">Visitor</option>
+              <option value="unknown">Unknown</option>
+            </select>
+          )}
           <select className={fieldClass} aria-label="Status" value={filters.status ?? ""} onChange={(event) => updateFilter("status", event.target.value)}>
             <option value="">All statuses</option>
             {statusOptions[kind].map((status) => <option key={status} value={status}>{status.replaceAll("_", " ")}</option>)}
           </select>
-          {!["employees"].includes(kind) && (
+          {!["employees", "person_detections", "unknown_review"].includes(kind) && (
             <select className={fieldClass} aria-label="Camera" value={filters.camera_id ?? ""} onChange={(event) => updateFilter("camera_id", event.target.value)}>
               <option value="">All cameras</option>
               {cameras.map((camera) => <option key={camera.id} value={camera.id}>{camera.name}</option>)}

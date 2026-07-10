@@ -62,7 +62,7 @@ export function TenantAdminSettings() {
           The backend blocks access unless the logged-in account is a tenant member with the tenant_admin role. All data shown in this workspace is filtered by the current tenant_id.
         </p>
         <p className="text-sm leading-6 text-slate-600 dark:text-slate-300">
-          Tenant admins can manage members and review enabled features, but cannot create, move, or inspect other tenants.
+          Tenant admins can manage portal users and review enabled features, but cannot create, move, or inspect other tenants.
         </p>
       </Card>
     </div>

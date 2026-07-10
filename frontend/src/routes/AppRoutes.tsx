@@ -10,7 +10,7 @@ import { dashboardPathForRole } from "@/utils/authRouting";
 const Login = lazy(() => import("@/pages/Login").then((module) => ({ default: module.Login })));
 const Signup = lazy(() => import("@/pages/Signup").then((module) => ({ default: module.Signup })));
 const TenantAdminDashboard = lazy(() => import("@/pages/tenant-admin/Dashboard").then((module) => ({ default: module.TenantAdminDashboard })));
-const TenantAdminMembers = lazy(() => import("@/pages/tenant-admin/Members").then((module) => ({ default: module.TenantAdminMembers })));
+const PortalUsersPage = lazy(() => import("@/pages/tenant-admin/Members").then((module) => ({ default: module.TenantAdminMembers })));
 const TenantAdminFeatures = lazy(() => import("@/pages/tenant-admin/Features").then((module) => ({ default: module.TenantAdminFeatures })));
 const TenantAdminSettings = lazy(() => import("@/pages/tenant-admin/Settings").then((module) => ({ default: module.TenantAdminSettings })));
 const AttendanceSettingsPage = lazy(() => import("@/pages/client-admin/attendance/Settings").then((module) => ({ default: module.AttendanceSettingsPage })));
@@ -23,10 +23,14 @@ const LiveAttendancePage = lazy(() => import("@/pages/client-admin/attendance/Li
 const AttendanceBoardPage = lazy(() => import("@/pages/client-admin/attendance/AttendanceBoard").then((module) => ({ default: module.AttendanceBoardPage })));
 const CamerasPage = lazy(() => import("@/pages/client-admin/Cameras").then((module) => ({ default: module.CamerasPage })));
 const LiveRecognitionPage = lazy(() => import("@/pages/client-admin/LiveRecognition").then((module) => ({ default: module.LiveRecognitionPage })));
+const PersonDetectionPage = lazy(() => import("@/pages/client-admin/PersonDetection").then((module) => ({ default: module.PersonDetectionPage })));
+const StaffPage = lazy(() => import("@/pages/client-admin/Staff").then((module) => ({ default: module.StaffPage })));
 const ClientAdminDashboard = lazy(() => import("@/pages/client-admin/Dashboard").then((module) => ({ default: module.ClientAdminDashboard })));
 const ObjectDetectionPage = lazy(() => import("@/pages/client-admin/ObjectDetection").then((module) => ({ default: module.ObjectDetectionPage })));
 const CameraZoneViewPage = lazy(() => import("@/pages/client-admin/CameraZoneView").then((module) => ({ default: module.CameraZoneViewPage })));
 const ReportsPage = lazy(() => import("@/pages/client-admin/Reports").then((module) => ({ default: module.ReportsPage })));
+const VisitorUnknownReportsPage = lazy(() => import("@/pages/client-admin/UnknownReview").then((module) => ({ default: module.UnknownReviewPage })));
+const VisitorProfilePage = lazy(() => import("@/pages/client-admin/VisitorProfile").then((module) => ({ default: module.VisitorProfilePage })));
 const Visitors = lazy(() => import("@/pages/client/Visitors").then((module) => ({ default: module.Visitors })));
 const AccessControl = lazy(() => import("@/pages/client/AccessControl").then((module) => ({ default: module.AccessControl })));
 const Alerts = lazy(() => import("@/pages/client/Alerts").then((module) => ({ default: module.Alerts })));
@@ -88,18 +92,21 @@ export function AppRoutes() {
 
             <Route element={<ProtectedRoute allowedRoles={["TENANT_ADMIN"]} />}>
               <Route path="/tenant-admin/dashboard" element={<TenantAdminDashboard />} />
-              <Route path="/tenant-admin/members" element={<TenantAdminMembers />} />
+              <Route path="/tenant-admin/portal-users" element={<PortalUsersPage />} />
+              <Route path="/tenant-admin/members" element={<Navigate to="/tenant-admin/portal-users" replace />} />
               <Route path="/tenant-admin/features" element={<TenantAdminFeatures />} />
               <Route path="/tenant-admin/settings" element={<TenantAdminSettings />} />
               <Route element={<ProtectedRoute requiredModule="attendance" />}>
                 <Route path="/tenant-admin/attendance/settings" element={<AttendanceSettingsPage />} />
                 <Route path="/tenant-admin/attendance/shifts" element={<AttendanceShiftsPage />} />
                 <Route path="/tenant-admin/attendance/holidays" element={<AttendanceHolidaysPage />} />
-                <Route path="/tenant-admin/attendance/employees" element={<EmployeeListPage />} />
+                <Route path="/tenant-admin/attendance/members" element={<EmployeeListPage />} />
+                <Route path="/tenant-admin/attendance/employees" element={<Navigate to="/tenant-admin/attendance/members" replace />} />
                 <Route path="/tenant-admin/attendance/employees/:id" element={<EmployeeDetailsPage />} />
                 <Route path="/tenant-admin/attendance/face-enrollment" element={<FaceEnrollmentPage />} />
                 <Route path="/tenant-admin/attendance/board" element={<AttendanceBoardPage />} />
                 <Route path="/tenant-admin/attendance/live" element={<LiveAttendancePage />} />
+                <Route path="/tenant-admin/attendance/reports" element={<ReportsPage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>
                 <Route path="/tenant-admin/object-detection/zones" element={<Navigate to="/tenant-admin/cameras/zones" replace />} />
@@ -110,8 +117,16 @@ export function AppRoutes() {
               <Route element={<ProtectedRoute requiredModule="attendance" />}>
                 <Route path="/tenant-admin/cameras/live" element={<LiveRecognitionPage />} />
               </Route>
-              <Route element={<ProtectedRoute requiredModule="visitor_management" />}>
-                <Route path="/tenant-admin/visitors" element={<Visitors />} />
+              <Route path="/tenant-admin/staff" element={<StaffPage />} />
+              <Route path="/tenant-admin/visitor-unknown/staff" element={<Navigate to="/tenant-admin/staff" replace />} />
+              <Route element={<ProtectedRoute requiredModule="visitor_unknown" />}>
+                <Route path="/tenant-admin/visitor-unknown/person-detection" element={<PersonDetectionPage />} />
+                <Route path="/tenant-admin/visitor-unknown/visitors" element={<Visitors />} />
+                <Route path="/tenant-admin/visitor-unknown/visitors/:visitorId" element={<VisitorProfilePage />} />
+                <Route path="/tenant-admin/visitor-unknown/unknown-review" element={<VisitorUnknownReportsPage />} />
+                <Route path="/tenant-admin/visitor-unknown/reports" element={<ReportsPage />} />
+                <Route path="/tenant-admin/visitor-unknown" element={<Navigate to="/tenant-admin/visitor-unknown/person-detection" replace />} />
+                <Route path="/tenant-admin/visitors" element={<Navigate to="/tenant-admin/visitor-unknown/visitors" replace />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="access_control" />}>
                 <Route path="/tenant-admin/access-control" element={<AccessControl />} />
@@ -125,7 +140,8 @@ export function AppRoutes() {
 
             <Route element={<ProtectedRoute allowedRoles={["CLIENT_ADMIN"]} />}>
               <Route path="/client-admin/dashboard" element={<ClientAdminDashboard />} />
-              <Route path="/client-admin/members" element={<TenantAdminMembers />} />
+              <Route path="/client-admin/portal-users" element={<PortalUsersPage />} />
+              <Route path="/client-admin/members" element={<Navigate to="/client-admin/portal-users" replace />} />
               <Route path="/client-admin/features" element={<TenantAdminFeatures />} />
               <Route path="/client-admin/settings" element={<TenantAdminSettings />} />
 
@@ -133,11 +149,13 @@ export function AppRoutes() {
                 <Route path="/client-admin/attendance/settings" element={<AttendanceSettingsPage />} />
                 <Route path="/client-admin/attendance/shifts" element={<AttendanceShiftsPage />} />
                 <Route path="/client-admin/attendance/holidays" element={<AttendanceHolidaysPage />} />
-                <Route path="/client-admin/attendance/employees" element={<EmployeeListPage />} />
+                <Route path="/client-admin/attendance/members" element={<EmployeeListPage />} />
+                <Route path="/client-admin/attendance/employees" element={<Navigate to="/client-admin/attendance/members" replace />} />
                 <Route path="/client-admin/attendance/employees/:id" element={<EmployeeDetailsPage />} />
                 <Route path="/client-admin/attendance/face-enrollment" element={<FaceEnrollmentPage />} />
                 <Route path="/client-admin/attendance/board" element={<AttendanceBoardPage />} />
                 <Route path="/client-admin/attendance/live" element={<LiveAttendancePage />} />
+                <Route path="/client-admin/attendance/reports" element={<ReportsPage />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="object_detection" />}>
                 <Route path="/client-admin/object-detection/zones" element={<Navigate to="/client-admin/cameras/zones" replace />} />
@@ -148,8 +166,16 @@ export function AppRoutes() {
               <Route element={<ProtectedRoute requiredModule="attendance" />}>
                 <Route path="/client-admin/cameras/live" element={<LiveRecognitionPage />} />
               </Route>
-              <Route element={<ProtectedRoute requiredModule="visitor_management" />}>
-                <Route path="/client-admin/visitors" element={<Visitors />} />
+              <Route path="/client-admin/staff" element={<StaffPage />} />
+              <Route path="/client-admin/visitor-unknown/staff" element={<Navigate to="/client-admin/staff" replace />} />
+              <Route element={<ProtectedRoute requiredModule="visitor_unknown" />}>
+                <Route path="/client-admin/visitor-unknown/person-detection" element={<PersonDetectionPage />} />
+                <Route path="/client-admin/visitor-unknown/visitors" element={<Visitors />} />
+                <Route path="/client-admin/visitor-unknown/visitors/:visitorId" element={<VisitorProfilePage />} />
+                <Route path="/client-admin/visitor-unknown/unknown-review" element={<VisitorUnknownReportsPage />} />
+                <Route path="/client-admin/visitor-unknown/reports" element={<ReportsPage />} />
+                <Route path="/client-admin/visitor-unknown" element={<Navigate to="/client-admin/visitor-unknown/person-detection" replace />} />
+                <Route path="/client-admin/visitors" element={<Navigate to="/client-admin/visitor-unknown/visitors" replace />} />
               </Route>
               <Route element={<ProtectedRoute requiredModule="access_control" />}>
                 <Route path="/client-admin/access-control" element={<AccessControl />} />

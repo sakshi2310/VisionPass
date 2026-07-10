@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import database_session, get_current_tenant_admin
+from app.core.dependencies import database_session, get_current_tenant_admin, require_module
 from app.services import report_service
 
 router = APIRouter()
@@ -81,13 +81,54 @@ def read_visitor_report(
     employee_id: str | None = None,
     status: str | None = None,
     camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
     db: Session = Depends(database_session),
     current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
 ):
     _validate_range(start_date, end_date)
     return _result(report_service.visitor_report(
         db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
-        employee_id=employee_id, status=status, camera_id=camera_id,
+        employee_id=employee_id, status=status, camera_id=camera_id, zone_id=zone_id, match_type=match_type,
+    ))
+
+
+@router.get("/person-detections")
+def read_person_detection_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
+):
+    _validate_range(start_date, end_date)
+    return _result(report_service.person_detection_report(
+        db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
+        camera_id=camera_id, zone_id=zone_id, match_type=match_type, status=status,
+    ))
+
+
+@router.get("/unknown-review")
+def read_unknown_review_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
+):
+    _validate_range(start_date, end_date)
+    return _result(report_service.unknown_review_report(
+        db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
+        camera_id=camera_id, zone_id=zone_id, match_type=match_type, status=status,
     ))
 
 
@@ -169,6 +210,75 @@ def export_attendance_report(
     return _csv_response(items, "attendance-report.csv", [
         "attendance_date", "employee_code", "employee_name", "department", "status",
         "first_check_in", "last_check_out", "total_work_minutes",
+    ])
+
+
+@router.get("/visitors/export.csv")
+def export_visitor_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    employee_id: str | None = None,
+    status: str | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
+):
+    _validate_range(start_date, end_date)
+    items = report_service.visitor_report(
+        db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
+        employee_id=employee_id, status=status, camera_id=camera_id, zone_id=zone_id, match_type=match_type,
+    )
+    return _csv_response(items, "visitor-report.csv", [
+        "seen_at", "full_name", "phone", "company", "purpose", "status",
+        "match_type", "camera_name", "zone_id", "note", "total_visits",
+    ])
+
+
+@router.get("/person-detections/export.csv")
+def export_person_detection_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
+):
+    _validate_range(start_date, end_date)
+    items = report_service.person_detection_report(
+        db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
+        camera_id=camera_id, zone_id=zone_id, match_type=match_type, status=status,
+    )
+    return _csv_response(items, "person-detections-report.csv", [
+        "detected_at", "camera_name", "zone_id", "match_type", "status",
+        "note", "matched_staff_id", "matched_visitor_id",
+    ])
+
+
+@router.get("/unknown-review/export.csv")
+def export_unknown_review_report(
+    start_date: date | None = None,
+    end_date: date | None = None,
+    camera_id: str | None = None,
+    zone_id: str | None = None,
+    match_type: str | None = None,
+    status: str | None = None,
+    db: Session = Depends(database_session),
+    current_admin=Depends(get_current_tenant_admin),
+    _visitor_access=Depends(require_module("visitor_unknown")),
+):
+    _validate_range(start_date, end_date)
+    items = report_service.unknown_review_report(
+        db, current_admin.tenant_id, start_date=start_date, end_date=end_date,
+        camera_id=camera_id, zone_id=zone_id, match_type=match_type, status=status,
+    )
+    return _csv_response(items, "unknown-review-report.csv", [
+        "detected_at", "camera_name", "zone_id", "note", "status", "match_type",
     ])
 
 

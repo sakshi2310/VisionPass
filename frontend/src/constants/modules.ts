@@ -9,6 +9,13 @@ export const moduleDefinitions: ModuleDefinition[] = [
     icon: "CalendarCheck2",
   },
   {
+    key: "visitor_unknown",
+    label: "Visitor + Unknown",
+    description: "Person detection, visitors, unknown review, and reports.",
+    route: "/client-admin/visitor-unknown/person-detection",
+    icon: "ScanFace",
+  },
+  {
     key: "object_detection",
     label: "Object Detection",
     description: "Detect configured objects in live video.",
@@ -20,15 +27,14 @@ export const moduleDefinitions: ModuleDefinition[] = [
 const attendanceNavGroup: NavItem = {
   key: "tenant-attendance",
   label: "Attendance",
-  path: "/client-admin/attendance/board",
+  path: "/client-admin/attendance/members",
   icon: "CalendarCheck2",
   moduleKey: "attendance",
   children: [
+    { key: "tenant-attendance-members", label: "Members", path: "/client-admin/attendance/members", icon: "Users" },
     { key: "tenant-attendance-board", label: "Attendance Board", path: "/client-admin/attendance/board", icon: "ClipboardList" },
-    { key: "tenant-attendance-settings", label: "One-time Settings", path: "/client-admin/attendance/settings", icon: "Settings2" },
-    { key: "tenant-attendance-shifts", label: "Shifts", path: "/client-admin/attendance/shifts", icon: "CalendarCheck2" },
-    { key: "tenant-attendance-holidays", label: "Holidays", path: "/client-admin/attendance/holidays", icon: "ClipboardList" },
-    { key: "tenant-attendance-employees", label: "Employees", path: "/client-admin/attendance/employees", icon: "Users" },
+    { key: "tenant-attendance-live", label: "Live Attendance", path: "/client-admin/attendance/live", icon: "ScanFace" },
+    { key: "tenant-attendance-reports", label: "Attendance Reports", path: "/client-admin/reports", icon: "ChartColumnIncreasing" },
   ],
 };
 
@@ -48,6 +54,20 @@ const objectDetectionNavGroup: NavItem = {
   ],
 };
 
+const visitorUnknownNavGroup: NavItem = {
+  key: "tenant-visitor-unknown",
+  label: "Visitor + Unknown",
+  path: "/client-admin/visitor-unknown/person-detection",
+  icon: "ScanFace",
+  moduleKey: "visitor_unknown",
+  children: [
+    { key: "tenant-visitor-unknown-person-detection", label: "Person Detection", path: "/client-admin/visitor-unknown/person-detection", icon: "ScanFace" },
+    { key: "tenant-visitor-unknown-visitors", label: "Visitors", path: "/client-admin/visitor-unknown/visitors", icon: "Users" },
+    { key: "tenant-visitor-unknown-review", label: "Unknown Review", path: "/client-admin/visitor-unknown/unknown-review", icon: "Search" },
+    { key: "tenant-visitor-unknown-reports", label: "Reports", path: "/client-admin/visitor-unknown/reports", icon: "ChartColumnIncreasing" },
+  ],
+};
+
 export const clientNavItems: NavItem[] = [
   { key: "dashboard", label: "Dashboard", path: "/dashboard", icon: "LayoutDashboard" },
   {
@@ -59,10 +79,10 @@ export const clientNavItems: NavItem[] = [
   },
   {
     key: "visitors",
-    label: "Visitors",
-    path: "/dashboard/visitors",
+    label: "Visitor + Unknown",
+    path: "/dashboard/visitor-unknown/person-detection",
     icon: "ScanFace",
-    moduleKey: "visitor_classification",
+    moduleKey: "visitor_unknown",
   },
   {
     key: "users",
@@ -86,13 +106,14 @@ export const tenantAdminNavItems: NavItem[] = [
       { key: "tenant-cameras-zones", label: "Zone View", path: "/tenant-admin/cameras/zones", icon: "ScanFace" },
     ],
   },
+  { key: "tenant-staff", label: "Staff", path: "/client-admin/staff", icon: "Users" },
+  { key: "tenant-portal-users", label: "Portal Users", path: "/tenant-admin/portal-users", icon: "Users" },
+  visitorUnknownNavGroup,
   attendanceNavGroup,
   objectDetectionNavGroup,
-  { key: "tenant-visitors", label: "Visitors", path: "/client-admin/visitors", icon: "Users", moduleKey: "visitor_management" },
   { key: "tenant-access", label: "Access Logs", path: "/client-admin/access-control", icon: "ShieldCheck", moduleKey: "access_control" },
   { key: "tenant-alerts", label: "Alerts", path: "/client-admin/alerts", icon: "ClipboardList", moduleKey: "alerts" },
   { key: "tenant-reports", label: "Reports Overview", path: "/client-admin/reports", icon: "ChartColumnIncreasing" },
-  { key: "tenant-members", label: "Members", path: "/tenant-admin/members", icon: "Users" },
   { key: "tenant-features", label: "Features", path: "/tenant-admin/features", icon: "Sparkles" },
   { key: "tenant-settings", label: "Settings", path: "/tenant-admin/settings", icon: "Settings2" },
 ];

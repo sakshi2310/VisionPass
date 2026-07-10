@@ -35,7 +35,7 @@ const initialSummary: DashboardSummary = {
 };
 
 function confidence(value?: number | null) {
-  return value == null ? "—" : `${Math.round(value * 100)}%`;
+  return value == null ? "-" : `${Math.round(value * 100)}%`;
 }
 
 function statusTone(status: string): "success" | "warning" | "danger" | "neutral" {
@@ -47,7 +47,7 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
 
 export function ClientAdminDashboard() {
   const { currentTenant, hasModule } = useApp();
-  const noProductModules = !hasModule("attendance") && !hasModule("object_detection");
+  const noProductModules = !hasModule("attendance") && !hasModule("object_detection") && !hasModule("visitor_unknown");
   const [summary, setSummary] = useState<DashboardSummary>(initialSummary);
   const [activity, setActivity] = useState<DashboardRecentActivity | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,7 +116,7 @@ export function ClientAdminDashboard() {
       {noProductModules ? (
         <EmptyState
           title="No product modules enabled"
-          description="Common camera, report, member, and settings tools remain available. Ask your Super Admin to enable Attendance or Object Detection."
+          description="Common camera, report, member, and settings tools remain available. Ask your Super Admin to enable Attendance, Visitor + Unknown, or Object Detection."
           action={<Camera className="h-7 w-7 text-slate-400" />}
         />
       ) : error ? (
@@ -160,7 +160,7 @@ export function ClientAdminDashboard() {
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">{event.employee_name}</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {event.employee_code} · {event.camera_name ?? event.source} · {formatDate(event.event_time)} {formatTime(event.event_time)}
+                          {event.employee_code} | {event.camera_name ?? event.source} | {formatDate(event.event_time)} {formatTime(event.event_time)}
                         </p>
                       </div>
                       <Badge tone={event.event_type === "check_in" ? "success" : "info"}>{event.event_type.replace("_", " ")}</Badge>
@@ -186,7 +186,7 @@ export function ClientAdminDashboard() {
                       <div>
                         <p className="font-medium text-slate-900 dark:text-white">{attempt.employee_name ?? "Unknown face"}</p>
                         <p className="mt-1 text-xs text-slate-500">
-                          {attempt.camera_name} · {confidence(attempt.confidence)} · {formatDate(attempt.created_at)} {formatTime(attempt.created_at)}
+                          {attempt.camera_name} | {confidence(attempt.confidence)} | {formatDate(attempt.created_at)} {formatTime(attempt.created_at)}
                         </p>
                       </div>
                       <Badge tone={statusTone(attempt.recognition_status)}>{attempt.recognition_status.replaceAll("_", " ")}</Badge>
