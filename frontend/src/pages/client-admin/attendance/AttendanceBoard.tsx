@@ -1,11 +1,13 @@
-import { CalendarDays, Loader2, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Toast } from "@/components/ui/Toast";
+import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   fetchAttendanceBoard,
@@ -45,9 +47,11 @@ function formatDateTime(value?: string | null) {
 function Row({
   employee,
   kind,
+  onOpenProfile,
 }: {
   employee: AttendanceBoardEmployee;
   kind: "present" | "absent";
+  onOpenProfile: (employeeId: string) => void;
 }) {
   const time =
     kind === "present"
@@ -56,7 +60,18 @@ function Row({
   const label = kind === "present" ? "Present" : "Absent";
 
   return (
-    <tr className="border-t border-slate-200/80 dark:border-white/10">
+    <tr
+      className="cursor-pointer border-t border-slate-200/80 transition-colors hover:bg-slate-50/70 dark:border-white/10 dark:hover:bg-white/5"
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpenProfile(employee.employee_id)}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpenProfile(employee.employee_id);
+        }
+      }}
+    >
       <td className="px-4 py-4">
         <div className="font-semibold text-slate-900 dark:text-white">{employee.employee_name}</div>
         <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">{employee.employee_code ?? employee.employee_id}</div>
@@ -67,6 +82,9 @@ function Row({
         </Badge>
       </td>
       <td className="px-4 py-4 text-sm text-slate-700 dark:text-slate-300">{formatDateTime(time ?? null)}</td>
+      <td className="px-4 py-4 text-right text-slate-400 dark:text-slate-500">
+        <ChevronRight className="ml-auto h-4 w-4" />
+      </td>
     </tr>
   );
 }
@@ -82,16 +100,24 @@ function EmptyTableMessage({ message }: { message: string }) {
 }
 
 export function AttendanceBoardPage() {
+  const { user } = useApp();
+  const navigate = useNavigate();
   const [date, setDate] = useState(todayIsoDate());
   const [board, setBoard] = useState<AttendanceBoardResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
+  const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
 
   usePageTitle("Vision Pass | Attendance Board");
 
-  async function loadBoard() {
+  async function loadBoard({ silent = false }: { silent?: boolean } = {}) {
     devLog("Attendance Board loads", { selected_date: date });
-    setLoading(true);
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     try {
       const payload = await fetchAttendanceBoard({ date });
       setBoard(payload);
@@ -104,6 +130,7 @@ export function AttendanceBoardPage() {
       setToast({ tone: "error", title: "Attendance board unavailable", message });
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   }
 
@@ -114,15 +141,19 @@ export function AttendanceBoardPage() {
 
   useEffect(() => {
     const interval = window.setInterval(() => {
-      void loadBoard();
-    }, 5000);
+      void loadBoard({ silent: true });
+    }, 3000);
     return () => window.clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
   function handleRefresh() {
     devLog("Refresh clicked", { selected_date: date });
-    void loadBoard();
+    void loadBoard({ silent: true });
+  }
+
+  function openEmployeeProfile(employeeId: string) {
+    navigate(`${adminBasePath}/attendance/employees/${employeeId}`);
   }
 
   const presentEmployees = board?.present_employees ?? [];
@@ -136,7 +167,10 @@ export function AttendanceBoardPage() {
             <p className="text-sm uppercase tracking-[0.24em] text-cyan-300">Attendance board</p>
             <h1 className="mt-2 text-3xl font-semibold text-white">Attendance Board</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
-              Use the date filter and refresh button to review live attendance projection for the selected day.
+              Use the date filter and refresh button to review the camera-driven attendance projection for the selected day.
+            </p>
+            <p className="mt-2 text-xs uppercase tracking-[0.22em] text-cyan-300/80">
+              Auto-refreshes every 3 seconds
             </p>
           </div>
           <div className="flex items-end gap-3">
@@ -147,8 +181,8 @@ export function AttendanceBoardPage() {
               onChange={(event) => setDate(event.target.value)}
               leftIcon={<CalendarDays className="h-4 w-4" />}
             />
-            <Button variant="secondary" leftIcon={<RefreshCw className="h-4 w-4" />} onClick={handleRefresh} disabled={loading}>
-              Refresh
+            <Button variant="secondary" leftIcon={<RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />} onClick={handleRefresh} disabled={loading || refreshing}>
+              {refreshing ? "Refreshing" : "Refresh"}
             </Button>
           </div>
         </div>
@@ -173,11 +207,12 @@ export function AttendanceBoardPage() {
                   <th className="px-4 py-3">Employee</th>
                   <th className="px-4 py-3">Label</th>
                   <th className="px-4 py-3">Time</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                 {presentEmployees.map((employee) => (
-                  <Row key={employee.employee_id} employee={employee} kind="present" />
+                  <Row key={employee.employee_id} employee={employee} kind="present" onOpenProfile={openEmployeeProfile} />
                 ))}
               </tbody>
             </table>
@@ -206,11 +241,12 @@ export function AttendanceBoardPage() {
                   <th className="px-4 py-3">Employee</th>
                   <th className="px-4 py-3">Label</th>
                   <th className="px-4 py-3">Last time</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 dark:divide-white/10">
                 {absentEmployees.map((employee) => (
-                  <Row key={employee.employee_id} employee={employee} kind="absent" />
+                  <Row key={employee.employee_id} employee={employee} kind="absent" onOpenProfile={openEmployeeProfile} />
                 ))}
               </tbody>
             </table>

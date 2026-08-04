@@ -33,7 +33,6 @@ const attendanceNavGroup: NavItem = {
   children: [
     { key: "tenant-attendance-members", label: "Members", path: "/client-admin/attendance/members", icon: "Users" },
     { key: "tenant-attendance-board", label: "Attendance Board", path: "/client-admin/attendance/board", icon: "ClipboardList" },
-    { key: "tenant-attendance-live", label: "Live Attendance", path: "/client-admin/attendance/live", icon: "ScanFace" },
     { key: "tenant-attendance-reports", label: "Attendance Reports", path: "/client-admin/reports", icon: "ChartColumnIncreasing" },
   ],
 };

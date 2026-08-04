@@ -1,4 +1,4 @@
-import { Loader2, ScanFace, ArrowLeft, Edit3, Trash2 } from "lucide-react";
+import { Loader2, ArrowLeft, Edit3, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 
@@ -10,11 +10,13 @@ import { useApp } from "@/context/AppContext";
 import { usePageTitle } from "@/hooks/usePageTitle";
 import {
   deleteFaceEnrollment,
+  fetchEmployeeAttendanceSummary,
   fetchEmployeeDetails,
   fetchEmployeeFaceEmbeddings,
   fetchEmployeeFaceImages,
   fetchEmployeeFaceProfile,
   type Employee,
+  type EmployeeAttendanceSummary,
   type EmployeeFaceEmbedding,
   type EmployeeFaceImage,
   type EmployeeFaceProfile,
@@ -23,6 +25,16 @@ import {
 function formatDate(value?: string | null) {
   if (!value) return "-";
   return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function formatDurationMinutes(totalMinutes?: number | null) {
+  if (totalMinutes == null || Number.isNaN(totalMinutes)) return "-";
+  const rounded = Math.max(0, Math.floor(totalMinutes));
+  const hours = Math.floor(rounded / 60);
+  const minutes = rounded % 60;
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h ${minutes}m`;
 }
 
 function faceTone(status: string) {
@@ -39,6 +51,15 @@ function imageTone(status: string) {
   return "neutral" as const;
 }
 
+function attendanceTone(status?: string | null) {
+  if (status === "present") return "success" as const;
+  if (status === "late") return "warning" as const;
+  if (status === "half_day") return "warning" as const;
+  if (status === "absent") return "danger" as const;
+  if (status === "holiday") return "neutral" as const;
+  return "neutral" as const;
+}
+
 type ToastState = {
   tone: "success" | "error";
   title: string;
@@ -52,6 +73,7 @@ export function EmployeeDetailsPage() {
   const adminBasePath = user?.role === "CLIENT_ADMIN" ? "/client-admin" : "/tenant-admin";
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [profile, setProfile] = useState<EmployeeFaceProfile | null>(null);
+  const [attendanceSummary, setAttendanceSummary] = useState<EmployeeAttendanceSummary | null>(null);
   const [images, setImages] = useState<EmployeeFaceImage[]>([]);
   const [embeddings, setEmbeddings] = useState<EmployeeFaceEmbedding[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,6 +100,14 @@ export function EmployeeDetailsPage() {
         setProfile(profileRow);
         setImages(imageRows.images);
         setEmbeddings(embeddingRows.embeddings);
+        try {
+          const attendanceRow = await fetchEmployeeAttendanceSummary(id);
+          if (!active) return;
+          setAttendanceSummary(attendanceRow);
+        } catch {
+          if (!active) return;
+          setAttendanceSummary(null);
+        }
       } catch {
         if (!active) return;
         setToast({ tone: "error", title: "Load failed", message: "Unable to load employee profile." });
@@ -134,9 +164,6 @@ export function EmployeeDetailsPage() {
             </Button>
             <Button variant="secondary" leftIcon={<Edit3 className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/employees?edit=${id}`)}>
               Edit Employee
-            </Button>
-            <Button variant="secondary" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/face-enrollment?employeeId=${id}`)}>
-              Enroll / Re-enroll Face
             </Button>
           </div>
         </div>
@@ -209,6 +236,36 @@ export function EmployeeDetailsPage() {
             </Button>
           </div>
         </Card>
+      </div>
+
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <Card className="grid gap-4 p-5">
+          <h2 className="text-xl font-semibold text-slate-900 dark:text-white">Attendance snapshot</h2>
+          {attendanceSummary ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {[
+                ["Status", attendanceSummary.summary?.status ?? "not_detected", true],
+                ["Present minutes", formatDurationMinutes(attendanceSummary.summary?.total_present_minutes ?? 0), false],
+                ["First seen", formatDate(attendanceSummary.summary?.first_seen_at ?? null), false],
+                ["Last seen", formatDate(attendanceSummary.summary?.last_seen_at ?? null), false],
+                ["Shift", attendanceSummary.summary?.shift_name ?? attendanceSummary.summary?.shift_id ?? "-", false],
+                ["Attendance date", new Date(attendanceSummary.attendance_date).toLocaleDateString(), false],
+              ].map(([label, value, badge]) => (
+                <div key={label as string} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-white/10 dark:bg-slate-950/30">
+                  <div className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-400">{label as string}</div>
+                  <div className="mt-2 font-medium text-slate-900 dark:text-white">
+                    {badge ? <Badge tone={attendanceTone(String(value))}>{String(value)}</Badge> : String(value)}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400">
+              No attendance summary available yet.
+            </div>
+          )}
+        </Card>
+
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">

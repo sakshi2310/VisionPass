@@ -10,6 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_name: str = "Vision Pass"
     environment: str = "development"
+    debug_logging: bool = False
     api_v1_prefix: str = "/api"
     database_url: str = "postgresql+psycopg://visionpass:visionpass@localhost:5432/visionpass"
     jwt_secret: str = "change-me"

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import models as _models  # noqa: F401
 from app.api.v1.api import api_router
 from app.core.config import settings
+from app.core.logger import configure_logging, log_system
 from app.db.schema import prepare_postgres_schema
 from app.db.session import SessionLocal, engine
 from app.models.camera import Camera
@@ -19,6 +20,8 @@ from app.services.camera_frame_service import process_camera_frame
 from app.services.camera_service import CameraError
 
 logger = logging.getLogger(__name__)
+configure_logging(settings.debug_logging)
+log_system(logger, f"Application Started Successfully | Environment: {settings.environment} | Debug: {'on' if settings.debug_logging else 'off'}")
 
 
 def _poll_active_attendance_cameras_once() -> None:
@@ -62,7 +65,7 @@ def _poll_active_attendance_cameras_once() -> None:
 
 async def _live_attendance_loop() -> None:
     interval_seconds = max(settings.camera_frame_interval_seconds, 5)
-    logger.info("[LIVE_RECOGNITION] background worker started interval_seconds=%s", interval_seconds)
+    log_system(logger, f"Camera Scanner Started Successfully | Interval: {interval_seconds}s")
     while True:
         await asyncio.to_thread(_poll_active_attendance_cameras_once)
         await asyncio.sleep(interval_seconds)

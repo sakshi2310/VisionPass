@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timedelta, timezone
 import mimetypes
+from time import perf_counter
 from pathlib import Path
 from uuid import uuid4
 
@@ -13,6 +14,7 @@ from sqlalchemy import String, cast, func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.logger import log_debug, log_error, log_success, log_warning
 from app.models.employee import AttendanceEmployee, EmployeeFaceEmbedding, EmployeeFaceImage, EmployeeFaceProfile
 from app.models.person_detection import PersonDetection
 from app.models.visitor import Visitor
@@ -422,8 +424,10 @@ def create_person_detections(
     detected_at: datetime | None = None,
     zone_id: str | None = None,
 ) -> list[PersonDetection]:
+    started_at = perf_counter()
     if "visitor_unknown" not in list_enabled_modules(db, tenant_id):
         return []
+
     settings_row = get_or_create_face_settings(db, tenant_id)
     threshold = float(settings.face_recognition_threshold)
     try:
@@ -436,10 +440,30 @@ def create_person_detections(
             min_brightness=float(settings_row.min_brightness),
             max_brightness=float(settings_row.max_brightness),
         )
-    except (FaceModelUnavailableError, FaceValidationError):
+    except FaceModelUnavailableError as exc:
+        log_error(logger, f"Model Loading Failed | Reason: {exc}")
+        if settings.debug_logging:
+            elapsed_ms = int((perf_counter() - started_at) * 1000)
+            log_debug(logger, f"Person Detection Failed | Tenant: {tenant_id} | Camera: {camera_id} | Processing: {elapsed_ms}ms")
+        return []
+    except FaceValidationError as exc:
+        elapsed_ms = int((perf_counter() - started_at) * 1000)
+        if exc.code == "NO_FACE_DETECTED":
+            log_warning(logger, f"No Face Detected in Frame | Faces Detected: 0 | Processing: {elapsed_ms}ms")
+        elif exc.code == "MULTIPLE_FACES_DETECTED":
+            faces_detected = int(exc.metrics.get("face_count") or 2)
+            log_warning(logger, f"Multiple Faces Detected | Faces Detected: {faces_detected} | Reason: {exc.message}")
+        elif exc.code in {"LOW_FACE_CONFIDENCE", "LOW_IMAGE_QUALITY"}:
+            log_warning(logger, f"Face Confidence Below Threshold | Reason: {exc.message}")
+        else:
+            log_error(logger, f"Detection Failed | Reason: {exc.message}")
+        if settings.debug_logging:
+            log_debug(logger, f"Person Detection Failed | Tenant: {tenant_id} | Camera: {camera_id} | Processing: {elapsed_ms}ms")
         return []
 
     if not faces:
+        elapsed_ms = int((perf_counter() - started_at) * 1000)
+        log_warning(logger, f"No Face Detected in Frame | Faces Detected: 0 | Processing: {elapsed_ms}ms")
         return []
 
     timestamp = detected_at or _now()
@@ -497,6 +521,27 @@ def create_person_detections(
                             visitor.first_seen_at = timestamp
                         visitor.last_seen_at = timestamp
                         db.add(visitor)
+            detected_name = (
+                staff_match["employee_name"]
+                if staff_match is not None
+                else visitor_match["visitor_name"]
+                if visitor_match is not None
+                else "Unknown"
+            )
+            elapsed_ms = int((perf_counter() - started_at) * 1000)
+            log_success(
+                logger,
+                (
+                    f"Person Detected: {detected_name} | Match: {existing_detection.match_type.capitalize()} "
+                    f"| Confidence: {face.detection_confidence * 100:.0f}% | Faces Detected: {len(faces)} "
+                    f"| Processing: {elapsed_ms}ms"
+                ),
+            )
+            if settings.debug_logging:
+                log_debug(
+                    logger,
+                    f"Person Detection Details | Camera: {camera_id} | Zone: {zone_id or '-'} | Snapshot: {snapshot_path or '-'}",
+                )
             continue
 
         detection = PersonDetection(
@@ -536,6 +581,28 @@ def create_person_detections(
                     image_path=snapshot_path,
                     commit=False,
                 )
+
+        detected_name = (
+            staff_match["employee_name"]
+            if staff_match is not None
+            else visitor_match["visitor_name"]
+            if visitor_match is not None
+            else "Unknown"
+        )
+        elapsed_ms = int((perf_counter() - started_at) * 1000)
+        log_success(
+            logger,
+            (
+                f"Person Detected: {detected_name} | Match: {match_type.capitalize()} "
+                f"| Confidence: {face.detection_confidence * 100:.0f}% | Faces Detected: {len(faces)} "
+                f"| Processing: {elapsed_ms}ms"
+            ),
+        )
+        if settings.debug_logging:
+            log_debug(
+                logger,
+                f"Person Detection Details | Camera: {camera_id} | Zone: {zone_id or '-'} | Snapshot: {snapshot_path or '-'}",
+            )
 
     db.commit()
     for detection in detections:

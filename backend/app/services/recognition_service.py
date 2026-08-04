@@ -58,7 +58,13 @@ def find_best_employee_match(
     }
 
 
-def _unmatched(status: str, *, confidence: float | None = None, distance: float | None = None) -> dict:
+def _unmatched(
+    status: str,
+    *,
+    confidence: float | None = None,
+    distance: float | None = None,
+    face_count: int | None = None,
+) -> dict:
     return {
         "recognized": False,
         "employee_id": None,
@@ -67,6 +73,7 @@ def _unmatched(status: str, *, confidence: float | None = None, distance: float 
         "distance": distance,
         "threshold": app_settings.face_recognition_threshold,
         "recognition_status": status,
+        "face_count": face_count,
     }
 
 
@@ -116,14 +123,15 @@ def recognize_employee_face(
         )
     except FaceValidationError as exc:
         if exc.code == NO_FACE_DETECTED:
-            return _unmatched("NO_FACE")
+            return _unmatched("NO_FACE", face_count=int(exc.metrics.get("face_count") or 0))
         if exc.code == MULTIPLE_FACES_DETECTED:
-            return _unmatched("MULTIPLE_FACES")
+            return _unmatched("MULTIPLE_FACES", face_count=int(exc.metrics.get("face_count") or 2))
         if exc.code in {LOW_FACE_CONFIDENCE, LOW_IMAGE_QUALITY}:
             confidence = exc.metrics.get("detection_confidence")
             result = _unmatched(
                 "LOW_CONFIDENCE",
                 confidence=float(confidence) if confidence is not None else None,
+                face_count=int(exc.metrics.get("face_count") or 1),
             )
             _queue_recognition_alert(db, tenant_id, result)
             return result
@@ -133,14 +141,19 @@ def recognize_employee_face(
 
     match = find_best_employee_match(db, tenant_id, analysis.embedding)
     if match is None:
-        result = _unmatched("UNKNOWN")
+        result = _unmatched("UNKNOWN", face_count=analysis.face_count)
         _queue_recognition_alert(db, tenant_id, result)
         return result
 
     confidence = match["confidence"]
     distance = match["distance"]
     if confidence < app_settings.face_recognition_threshold:
-        result = _unmatched("LOW_CONFIDENCE", confidence=confidence, distance=distance)
+        result = _unmatched(
+            "LOW_CONFIDENCE",
+            confidence=confidence,
+            distance=distance,
+            face_count=analysis.face_count,
+        )
         _queue_recognition_alert(db, tenant_id, result)
         return result
 
@@ -152,4 +165,5 @@ def recognize_employee_face(
         "distance": distance,
         "threshold": app_settings.face_recognition_threshold,
         "recognition_status": "MATCHED",
+        "face_count": analysis.face_count,
     }

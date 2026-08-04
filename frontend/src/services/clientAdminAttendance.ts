@@ -188,12 +188,6 @@ export type DailyAttendance = {
   updated_at: string;
 };
 
-export type TodayAttendanceItem = DailyAttendance & {
-  employee_name: string;
-  employee_code: string;
-};
-
-
 export type AttendanceBoardStatus = "present" | "late" | "half_day" | "absent" | "holiday" | "not_detected";
 
 export type AttendanceLiveCameraStatus = {
@@ -269,26 +263,10 @@ export type AttendanceBoardResponse = {
   present_employees: AttendanceBoardEmployee[];
   absent_employees: AttendanceBoardEmployee[];
   latest_sessions: AttendanceLatestSession[];
-  presence_sessions?: AttendancePresenceSession[];
   debug_summary: AttendanceBoardDebugSummary;
   employees?: AttendanceBoardEmployee[];
   stats?: Record<string, number>;
   live_camera_status?: AttendanceLiveCameraStatus | null;
-};
-
-export type AttendancePresenceSession = {
-  id: string;
-  tenant_id: string;
-  employee_id: string;
-  attendance_date: string;
-  session_type: "present" | "absent";
-  started_at: string;
-  ended_at?: string | null;
-  latest_source?: string | null;
-  camera_id?: string | null;
-  reason?: string | null;
-  created_at: string;
-  updated_at: string;
 };
 
 export type AttendanceSession = {
@@ -299,6 +277,8 @@ export type AttendanceSession = {
   camera_id?: string | null;
   confidence?: number | null;
   is_open: boolean;
+  session_type?: "present" | "absent";
+  reason?: string | null;
 };
 
 export type AttendanceDetectionHistory = {
@@ -323,7 +303,6 @@ export type EmployeeAttendanceSummary = {
   };
   summary: AttendanceBoardEmployee | null;
   sessions: AttendanceSession[];
-  presence_sessions?: AttendancePresenceSession[];
   detection_history: AttendanceDetectionHistory[];
 };
 
@@ -344,11 +323,6 @@ export type RecognitionResult = {
   distance?: number | null;
   threshold: number;
   recognition_status: "MATCHED" | "UNKNOWN" | "LOW_CONFIDENCE" | "NO_FACE" | "MULTIPLE_FACES";
-};
-
-export type RecognizeAndMarkResponse = {
-  recognition: RecognitionResult;
-  attendance?: AttendanceMarkResponse | null;
 };
 
 export type CameraDetectionZone = {
@@ -799,11 +773,6 @@ export function fetchEmployeeAttendanceSummary(employeeId: string, date?: string
   return requestJson<EmployeeAttendanceSummary>(`/api/client-admin/attendance/board/${employeeId}${query ? `?${query}` : ""}`);
 }
 
-export async function fetchTodayAttendance(): Promise<TodayAttendanceItem[]> {
-  const response = await requestJson<{ records: TodayAttendanceItem[] }>("/api/attendance/today");
-  return response.records;
-}
-
 export function markCheckIn(employeeId: string) {
   return requestJson<AttendanceMarkResponse>("/api/attendance/check-in", {
     method: "POST",
@@ -815,20 +784,6 @@ export function markCheckOut(employeeId: string) {
   return requestJson<AttendanceMarkResponse>("/api/attendance/check-out", {
     method: "POST",
     body: JSON.stringify({ employee_id: employeeId, source: "web" }),
-  });
-}
-
-export function recognizeAndMarkAttendance(
-  image: File,
-  options?: { cameraId?: string; mode?: "attendance" | "access" | "visitor" },
-) {
-  const form = new FormData();
-  form.append("image", image, image.name);
-  if (options?.cameraId) form.append("camera_id", options.cameraId);
-  form.append("mode", options?.mode ?? "attendance");
-  return requestJson<RecognizeAndMarkResponse>("/api/attendance/recognize-and-mark", {
-    method: "POST",
-    body: form,
   });
 }
 

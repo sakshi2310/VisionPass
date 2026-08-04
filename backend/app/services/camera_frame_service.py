@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 
 from sqlalchemy.orm import Session
 
@@ -35,6 +36,8 @@ def _log_frame_decision(
     decided_event: str,
     final_status: str,
     reason: str,
+    faces_detected: int | None = None,
+    processing_ms: int | None = None,
 ) -> None:
     log_live_recognition_decision(
         tenant_id=tenant_id,
@@ -43,9 +46,11 @@ def _log_frame_decision(
         frame_received=frame_received,
         face_detected=face_detected,
         matched=matched,
+        faces_detected=faces_detected,
         employee_id=employee_id,
         employee_name=employee_name,
         confidence=confidence,
+        processing_ms=processing_ms,
         decided_event=decided_event,
         final_status=final_status,
         reason=reason,
@@ -90,6 +95,7 @@ def process_camera_frame(
 ) -> dict:
     """Fetch and validate a frame, optionally recognize and mark attendance."""
 
+    started_at = perf_counter()
     camera = get_camera(db, tenant_id, camera_id)
     if camera is None:
         _log_frame_decision(
@@ -278,6 +284,8 @@ def process_camera_frame(
                 recognition_status=recognition["recognition_status"],
                 camera_id=camera.id,
                 camera_enabled=camera.is_active,
+                faces_detected=int(recognition.get("face_count") or 1),
+                processing_ms=int((perf_counter() - started_at) * 1000),
             )
             attendance = presence["attendance"]
             attendance_decision = presence["decision"]

@@ -1,4 +1,4 @@
-import { Loader2, Plus, RefreshCw, Save, ScanFace, Trash2, Pencil, Eye, Power, PowerOff, Upload, ImagePlus, X } from "lucide-react";
+import { Loader2, Plus, RefreshCw, Save, Trash2, Pencil, Eye, Power, PowerOff, Upload, ImagePlus, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -515,9 +515,6 @@ export function EmployeeListPage() {
                     </Button>
                     <Button variant="secondary" size="sm" leftIcon={<Pencil className="h-4 w-4" />} onClick={() => openEdit(employee)}>
                       Edit
-                    </Button>
-                    <Button variant="secondary" size="sm" leftIcon={<ScanFace className="h-4 w-4" />} onClick={() => navigate(`${adminBasePath}/attendance/face-enrollment?employeeId=${employee.id}`)}>
-                      Enroll Face
                     </Button>
                     <Button variant="secondary" size="sm" leftIcon={employee.is_active ? <PowerOff className="h-4 w-4" /> : <Power className="h-4 w-4" />} onClick={() => void handleActivate(employee)} disabled={saving}>
                       {employee.is_active ? "Deactivate" : "Activate"}

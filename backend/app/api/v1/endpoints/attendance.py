@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import logging
+from time import perf_counter
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -284,6 +285,7 @@ async def recognize_attendance_face(
     camera_id: str | None = None
     mode: RecognitionMode = "attendance"
     try:
+        started_at = perf_counter()
         image_content, camera_id, mode = await _recognition_input(request)
         result = recognize_employee_face(db, current_user.tenant_id, image_content)
     except HTTPException:
@@ -328,7 +330,56 @@ async def recognize_attendance_face(
         camera_id=camera_id,
         mode=mode,
     )
-    return RecognitionResponse.model_validate(result)
+    processing_ms = int((perf_counter() - started_at) * 1000)
+    recognition_response = RecognitionResponse.model_validate(result)
+    if recognition_response.recognized:
+        log_live_recognition_decision(
+            camera_enabled=bool(camera_id),
+            tenant_id=current_user.tenant_id,
+            camera_id=camera_id,
+            frame_received=True,
+            face_detected=True,
+            matched=True,
+            faces_detected=int(result.get("face_count") or 1),
+            employee_id=recognition_response.employee_id,
+            employee_name=recognition_response.employee_name,
+            confidence=recognition_response.confidence,
+            processing_ms=processing_ms,
+            decided_event="recognized",
+            final_status="recognized",
+            reason="Person detected successfully",
+        )
+        return recognition_response
+
+    log_live_recognition_decision(
+        camera_enabled=bool(camera_id),
+        tenant_id=current_user.tenant_id,
+        camera_id=camera_id,
+        frame_received=True,
+        face_detected=recognition_response.recognition_status != "NO_FACE",
+        matched=False,
+        faces_detected=int(result.get("face_count") or 0),
+        employee_id=None,
+        employee_name=None,
+        confidence=recognition_response.confidence,
+        processing_ms=processing_ms,
+        decided_event=(
+            "no_face"
+            if recognition_response.recognition_status == "NO_FACE"
+            else "unknown_face"
+            if recognition_response.recognition_status == "UNKNOWN"
+            else "error"
+        ),
+        final_status="not_detected",
+        reason=(
+            "No face detected"
+            if recognition_response.recognition_status == "NO_FACE"
+            else "Unknown face detected"
+            if recognition_response.recognition_status == "UNKNOWN"
+            else "Face did not match"
+        ),
+    )
+    return recognition_response
 
 
 @router.post("/recognize-and-mark", response_model=RecognizeAndMarkResponse)
@@ -340,6 +391,7 @@ async def recognize_and_mark_attendance(
     camera_id: str | None = None
     mode: RecognitionMode = "attendance"
     try:
+        started_at = perf_counter()
         image_content, camera_id, mode = await _recognition_input(request)
         camera_enabled, resolved_camera_id, _camera_name = _camera_presence_state(db, current_user.tenant_id, camera_id)
         recognition = recognize_employee_face(db, current_user.tenant_id, image_content)
@@ -404,7 +456,7 @@ async def recognize_and_mark_attendance(
                 if recognition["recognition_status"] == "UNKNOWN"
                 else "error"
             ),
-            final_status="not_detected",
+            final_status="absent",
             reason=(
                 "No face detected"
                 if recognition["recognition_status"] == "NO_FACE"
@@ -425,6 +477,8 @@ async def recognize_and_mark_attendance(
             recognition_status=recognition["recognition_status"],
             camera_id=resolved_camera_id or camera_id,
             camera_enabled=camera_enabled,
+            faces_detected=int(recognition.get("face_count") or 1),
+            processing_ms=int((perf_counter() - started_at) * 1000),
         )
     except AttendanceMarkError as exc:
         raise HTTPException(

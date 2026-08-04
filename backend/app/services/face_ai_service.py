@@ -8,6 +8,7 @@ import logging
 from typing import Any
 
 from app.core.config import settings
+from app.core.logger import log_error, log_system
 
 NO_FACE_DETECTED = "NO_FACE_DETECTED"
 MULTIPLE_FACES_DETECTED = "MULTIPLE_FACES_DETECTED"
@@ -81,9 +82,17 @@ def _get_face_analyzer():
             providers=["CPUExecutionProvider"],
         )
         analyzer.prepare(ctx_id=-1, det_thresh=settings.face_detection_confidence, det_size=(320, 320))
+        log_system(
+            logger,
+            f"Face Detection Model Loaded | Model: {settings.face_model_name} | Threshold: {settings.face_detection_confidence:.2f}",
+        )
         return analyzer
     except Exception as exc:  # pragma: no cover - depends on local model/runtime
-        logger.exception("Unable to initialize InsightFace model '%s'", settings.face_model_name)
+        log_error(
+            logger,
+            f"Model Loading Failed | Model: {settings.face_model_name} | Reason: {exc}",
+            exc_info=settings.debug_logging,
+        )
         raise FaceModelUnavailableError(
             "Face recognition is still preparing. Please wait a few minutes and try the photos again."
         ) from exc
@@ -176,7 +185,7 @@ def analyze_face_image(
     detector = analyzer or _get_face_analyzer()
     faces = detector.get(detection_image)
     if not faces:
-        raise FaceValidationError(NO_FACE_DETECTED, "No face was detected in the image.")
+        raise FaceValidationError(NO_FACE_DETECTED, "No face was detected in the image.", face_count=0)
     if len(faces) > 1:
         raise FaceValidationError(
             MULTIPLE_FACES_DETECTED,
@@ -191,6 +200,7 @@ def analyze_face_image(
             LOW_FACE_CONFIDENCE,
             "The detected face is not clear enough. Face the camera and improve the lighting.",
             detection_confidence=round(confidence, 4),
+            face_count=1,
         )
 
     x1, y1, x2, y2 = (int(round(float(value) / scale)) for value in face.bbox)
@@ -229,6 +239,7 @@ def analyze_face_image(
             LOW_IMAGE_QUALITY,
             "The overall face image quality is too low for enrollment.",
             quality_score=round(quality_score, 4),
+            face_count=1,
         )
 
     raw_embedding = getattr(face, "normed_embedding", None)
